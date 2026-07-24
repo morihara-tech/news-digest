@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "doc-arc": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "${CLAUDE_PROJECT_DIR:-.}/../doc-arc/mcp-server",
+        "run",
+        "server.py"
+      ]
+    }
+  }
+}
