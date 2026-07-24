@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Tech Sample Feed</title>
+    <link>https://example.com/tech</link>
+    <description>Sample tech RSS feed for tests</description>
+    <item>
+      <title>AWSの新サービスが発表されました</title>
+      <link>https://example.com/tech/aws-new-service</link>
+      <description>AWSは本日、新しいコンテナサービスを発表した。Kubernetesとの連携も強化される。</description>
+      <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>広告業界の動向レポート</title>
+      <link>https://example.com/tech/ad-industry-report</link>
+      <description>広告業界に関する最新のレポートが公開された。</description>
+      <pubDate>Mon, 01 Jan 2024 01:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Kubernetes 1.30がリリース</title>
+      <link>https://example.com/tech/kubernetes-1-30</link>
+      <description>Kubernetes 1.30がリリースされ、新機能が多数追加された。</description>
+      <pubDate>Mon, 01 Jan 2024 02:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

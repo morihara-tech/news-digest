@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Publickey Sample Feed</title>
+  <link href="https://example.com/publickey"/>
+  <updated>2024-01-01T00:00:00Z</updated>
+  <entry>
+    <title>Kubernetesクラスタ管理の新しいアプローチ</title>
+    <link href="https://example.com/publickey/k8s-new-approach"/>
+    <id>https://example.com/publickey/k8s-new-approach</id>
+    <updated>2024-01-01T00:00:00Z</updated>
+    <summary>Kubernetesクラスタ管理における新しいアプローチが提案された。</summary>
+  </entry>
+  <entry>
+    <title>データベース選定のポイント</title>
+    <link href="https://example.com/publickey/db-selection"/>
+    <id>https://example.com/publickey/db-selection</id>
+    <updated>2024-01-01T01:00:00Z</updated>
+    <summary>データベース選定における重要なポイントを解説する。AWSやGCPのマネージドサービスも比較。</summary>
+  </entry>
+</feed>
