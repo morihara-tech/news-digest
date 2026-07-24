@@ -1,0 +1,65 @@
+version: 1
+
+# 使用するLLM（切替は provider だけ変えれば済む）
+llm:
+  provider: claude            # claude | local-ai | claude-code-cli
+  model: claude-sonnet-4      # プロバイダー依存のモデルID
+  api_key_env: ANTHROPIC_API_KEY   # 実キーは .env から
+  # local-ai(Ollama) の場合の例:
+  # provider: local-ai
+  # model: deepseek-r1:14b
+  # base_url: http://localhost:11434/v1
+  # claude-code-cli（サブスクリプション利用）の場合の例:
+  # provider: claude-code-cli
+  # claude_code_cli:
+  #   command: claude
+  #   model: null            # null=サブスク既定モデル
+  #   timeout_seconds: 300
+  #   max_retries: 1
+  max_input_chars: 12000      # 要約前の本文切り詰め上限（トークン/コスト制御）
+  summary_language: ja
+  summary_style: "3行以内・結論から"
+
+# 配信先（複数可、URL実体は .env）
+delivery:
+  - name: my-slack
+    format: slack             # slack | google_chat
+    webhook_url_env: SLACK_WEBHOOK_URL
+    enabled: true
+
+# 実行スケジュール（cron側が参照。バッチ自体はステートレス）
+schedule:
+  timezone: Asia/Tokyo
+  times: ["08:00"]            # 参考値。実トリガーはcron
+  notify_on_empty: true       # 新着0件の日も「本日は新着なし」を通知する
+  treat_updated_as_new: false # 同一URLの内容更新は再配信しない
+
+# ダイジェスト整形
+digest:
+  max_articles: 20
+  group_by: feed              # feed | category | none
+
+# 保持ポリシー（既読状態の賞味期限）
+retention:
+  seen_ttl_days: 90
+
+# 配信失敗時の扱い
+delivery_policy:
+  max_retry_runs: 3           # 同一記事の配信に3run連続失敗したら諦めてログのみ記録
+
+# 全体フィルタ（各フィードで上書き可）
+filters:
+  include_keywords: []        # 空=全通過
+  exclude_keywords: ["PR", "広告"]
+
+# フィード一覧（例。実際に使うフィードに置き換えること）
+feeds:
+  - name: "TechCrunch Japan"
+    url: "https://jp.techcrunch.com/feed/"
+    category: tech
+    enabled: true
+  - name: "Publickey"
+    url: "https://www.publickey1.jp/atom.xml"
+    category: tech
+    filters:
+      include_keywords: ["AWS", "Kubernetes"]

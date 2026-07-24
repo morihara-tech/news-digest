@@ -1,0 +1,16 @@
+# secrets
+.env
+
+# local state (sqlite db, cron logs)
+state/
+*.db
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.python-version
+
+# editor
+.DS_Store
