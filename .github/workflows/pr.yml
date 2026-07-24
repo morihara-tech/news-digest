@@ -1,0 +1,33 @@
+name: PR
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+jobs:
+  auto-approve:
+    if: "! github.event.pull_request.draft"
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App token
+        id: create_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AUTO_APPROVE_APP_ID }}
+          private-key: ${{ secrets.AUTO_APPROVE_KEY }}
+
+      - name: Check organization team membership
+        id: check_membership
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.create_token.outputs.token }}
+        run: |
+          gh api "/orgs/${{ github.repository_owner }}/teams/admin/memberships/${{ github.event.pull_request.user.login }}"
+
+      - name: Auto approve
+        if: steps.check_membership.outcome == 'success'
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ steps.create_token.outputs.token }}
