@@ -261,3 +261,7 @@ tests/
   fixtures/     ローカル固定RSS/Atom XML
   test_*.py
 ```
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
