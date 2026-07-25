@@ -13,23 +13,33 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.config import DigestConfig, LLMConfig
+from src.config import DigestConfig
 from src.core.models import Article
 from src.llm.base import LLMProvider
 
 
-def summarize_articles(
-    articles: list[Article], provider: LLMProvider, llm_config: LLMConfig
-) -> list[Article]:
-    """記事群を要約する。コスト上限・要約失敗時は縮退配信フラグを立てる。"""
-    if not articles:
-        return articles
+def mark_cost_overflow(pool: list[Article], limit: int) -> list[Article]:
+    """要約対象記事数の上限（コスト上限）を超えた記事にdegradedマークを立てる。
 
-    to_summarize = articles[: llm_config.max_articles_to_summarize]
-    overflow = articles[llm_config.max_articles_to_summarize :]
+    サイトごとに分割する前の、サイト横断の全体プールに対して1回だけ適用する。
+    """
+    overflow = pool[limit:]
     for article in overflow:
         article.degraded = True
         article.degraded_reason = "cost_limit_exceeded"
+    return pool
+
+
+def summarize_articles(articles: list[Article], provider: LLMProvider) -> list[Article]:
+    """記事群を要約する。要約失敗時は縮退配信フラグを立てる。
+
+    既に degraded=True（コスト上限超過等）の記事はプロバイダー呼び出し対象から
+    除外し、残りだけを provider.summarize_batch() に渡す。
+    """
+    if not articles:
+        return articles
+
+    to_summarize = [a for a in articles if not a.degraded]
 
     if not to_summarize:
         return articles

@@ -86,8 +86,14 @@ def fetch_all(feeds: list[FeedConfig], global_filters: FiltersConfig) -> list[Ar
     for feed in feeds:
         if not feed.enabled:
             continue
-        articles = fetch_feed_entries(feed)
-        effective_filters = feed.effective_filters(global_filters)
-        articles = apply_filters(articles, effective_filters)
+        try:
+            articles = fetch_feed_entries(feed)
+            effective_filters = feed.effective_filters(global_filters)
+            articles = apply_filters(articles, effective_filters)
+        except Exception:  # noqa: BLE001 - 1フィードの想定外失敗が他フィードをブロックしない
+            logger.exception(
+                "フィード %s (%s) の取得中に予期しないエラーが発生しました", feed.name, feed.url
+            )
+            articles = []
         all_articles.extend(articles)
     return all_articles

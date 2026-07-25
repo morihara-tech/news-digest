@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.config import DigestConfig, LLMConfig
-from src.core.digest import build_digest, summarize_articles
+from src.config import DigestConfig
+from src.core.digest import build_digest, mark_cost_overflow, summarize_articles
 from src.core.models import Article
 from tests.mock_llm_provider import MockLLMProvider
 
@@ -13,8 +13,7 @@ def _article(url: str, feed_name: str = "feed", category: str = "tech") -> Artic
 def test_summarize_articles_success():
     articles = [_article("https://example.com/a"), _article("https://example.com/b")]
     provider = MockLLMProvider()
-    llm_config = LLMConfig()
-    summarize_articles(articles, provider, llm_config)
+    summarize_articles(articles, provider)
     assert all(a.summary is not None for a in articles)
     assert all(not a.degraded for a in articles)
 
@@ -22,8 +21,7 @@ def test_summarize_articles_success():
 def test_summarize_articles_degrades_on_failure():
     articles = [_article("https://example.com/a"), _article("https://example.com/b")]
     provider = MockLLMProvider(fail_urls={"https://example.com/a"})
-    llm_config = LLMConfig()
-    summarize_articles(articles, provider, llm_config)
+    summarize_articles(articles, provider)
 
     failed = [a for a in articles if a.url == "https://example.com/a"][0]
     ok = [a for a in articles if a.url == "https://example.com/b"][0]
@@ -36,23 +34,39 @@ def test_summarize_articles_degrades_on_failure():
 def test_summarize_articles_degrades_on_provider_batch_exception():
     articles = [_article("https://example.com/a")]
     provider = MockLLMProvider(raise_on_batch=True)
-    llm_config = LLMConfig()
-    summarize_articles(articles, provider, llm_config)
+    summarize_articles(articles, provider)
     assert articles[0].degraded is True
     assert articles[0].summary is None
 
 
-def test_summarize_articles_cost_limit_fallback():
-    articles = [_article(f"https://example.com/{i}") for i in range(5)]
-    provider = MockLLMProvider()
-    llm_config = LLMConfig(max_articles_to_summarize=3)
-    summarize_articles(articles, provider, llm_config)
+def test_summarize_articles_skips_already_degraded_articles():
+    """コスト上限超過等で既にdegraded=Trueな記事はプロバイダー呼び出し対象から除外される。"""
+    articles = [_article(f"https://example.com/{i}") for i in range(3)]
+    articles[2].degraded = True
+    articles[2].degraded_reason = "cost_limit_exceeded"
 
-    summarized = [a for a in articles if not a.degraded]
-    degraded = [a for a in articles if a.degraded]
-    assert len(summarized) == 3
-    assert len(degraded) == 2
-    assert all(a.degraded_reason == "cost_limit_exceeded" for a in degraded)
+    provider = MockLLMProvider()
+    summarize_articles(articles, provider)
+
+    assert articles[0].summary is not None
+    assert articles[1].summary is not None
+    # 既にdegradedだった記事はsummarize_batchに渡されず、summaryも設定されない
+    assert articles[2].degraded is True
+    assert articles[2].degraded_reason == "cost_limit_exceeded"
+    assert articles[2].summary is None
+    called_urls = set(provider.summarize_calls)
+    assert articles[2].normalized_url() not in called_urls
+
+
+def test_mark_cost_overflow_marks_articles_beyond_limit():
+    articles = [_article(f"https://example.com/{i}") for i in range(5)]
+    mark_cost_overflow(articles, limit=3)
+
+    kept = articles[:3]
+    overflow = articles[3:]
+    assert all(a.degraded is False for a in kept)
+    assert all(a.degraded is True for a in overflow)
+    assert all(a.degraded_reason == "cost_limit_exceeded" for a in overflow)
 
 
 def test_build_digest_applies_max_articles_and_carries_over():

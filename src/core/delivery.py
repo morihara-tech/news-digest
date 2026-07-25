@@ -53,11 +53,14 @@ def _format_article_line(article: Article) -> str:
     return f"* <{article.url}|{article.title}>\n  {article.summary}"
 
 
-def format_slack_payload(digest: DigestResult) -> dict:
+def format_slack_payload(digest: DigestResult, site_label: str | None = None) -> dict:
     if not digest.articles:
         return {"text": EMPTY_DIGEST_MESSAGE}
 
     lines: list[str] = []
+    if site_label:
+        lines.append(f"📰 *{site_label}*")
+        lines.append("---")
     for group_name, articles in digest.groups.items():
         lines.append(f"*{group_name}*")
         for article in articles:
@@ -66,11 +69,14 @@ def format_slack_payload(digest: DigestResult) -> dict:
     return {"text": text}
 
 
-def format_google_chat_payload(digest: DigestResult) -> dict:
+def format_google_chat_payload(digest: DigestResult, site_label: str | None = None) -> dict:
     if not digest.articles:
         return {"text": EMPTY_DIGEST_MESSAGE}
 
     lines: list[str] = []
+    if site_label:
+        lines.append(f"📰 {site_label}")
+        lines.append("---")
     for group_name, articles in digest.groups.items():
         lines.append(f"*{group_name}*")
         for article in articles:
@@ -82,11 +88,13 @@ def format_google_chat_payload(digest: DigestResult) -> dict:
     return {"text": text}
 
 
-def build_payload(target: DeliveryTarget, digest: DigestResult) -> dict:
+def build_payload(
+    target: DeliveryTarget, digest: DigestResult, site_label: str | None = None
+) -> dict:
     if target.config.format == "slack":
-        return format_slack_payload(digest)
+        return format_slack_payload(digest, site_label=site_label)
     if target.config.format == "google_chat":
-        return format_google_chat_payload(digest)
+        return format_google_chat_payload(digest, site_label=site_label)
     raise ValueError(f"未知の配信フォーマットです: {target.config.format}")
 
 
@@ -98,16 +106,21 @@ def send_webhook(target: DeliveryTarget, payload: dict, timeout: float = 15.0) -
         raise DeliveryError(f"配信先 {target.config.name} への配信に失敗しました: {exc}") from exc
 
 
-def deliver_digest(targets: list[DeliveryTarget], digest: DigestResult) -> list[str]:
+def deliver_digest(
+    targets: list[DeliveryTarget], digest: DigestResult, site_label: str | None = None
+) -> list[str]:
     """全配信先に送信する。成功した配信先名のリストを返す。
 
     一部配信先が失敗しても他の配信先への送信は継続する。
     1件も成功しなかった場合は DeliveryError を送出する。
+
+    site_label を指定すると、サイト（フィード）ごとの独立配信としてメッセージ
+    本文の先頭にサイト名の見出しを付与する。
     """
     succeeded: list[str] = []
     errors: list[str] = []
     for target in targets:
-        payload = build_payload(target, digest)
+        payload = build_payload(target, digest, site_label=site_label)
         try:
             send_webhook(target, payload)
             succeeded.append(target.config.name)
