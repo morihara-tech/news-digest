@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Duplicate Sample Feed</title>
+    <link>https://example.com/dup</link>
+    <description>Feed containing a URL that duplicates rss_tech.xml for dedup tests</description>
+    <item>
+      <title>AWSの新サービスが発表されました（再掲）</title>
+      <link>https://example.com/tech/aws-new-service</link>
+      <description>他フィードでも同じ記事が配信されるケースを想定したテスト用フィクスチャ。</description>
+      <pubDate>Mon, 01 Jan 2024 03:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>新しいプログラミング言語の紹介</title>
+      <link>https://example.com/dup/new-language</link>
+      <description>新しいプログラミング言語が紹介された。</description>
+      <pubDate>Mon, 01 Jan 2024 04:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

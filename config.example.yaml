@@ -17,6 +17,8 @@ llm:
   #   timeout_seconds: 300
   #   max_retries: 1
   max_input_chars: 12000      # 要約前の本文切り詰め上限（トークン/コスト制御）
+  max_articles_to_summarize: 50  # 1日あたりの要約対象記事数上限（コスト上限）。
+                                  # 超過分は要約せず縮退配信（タイトル+リンクのみ）にフォールバックする
   summary_language: ja
   summary_style: "3行以内・結論から"
 
