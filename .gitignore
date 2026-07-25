@@ -19,3 +19,6 @@ __pycache__/
 # MCP server config (local only)
 .mcp.json
 .claude/settings.local.json
+
+# 組織内エージェントの作業メモリ（内部情報を含むため非公開）
+.claude/agent-memory/
