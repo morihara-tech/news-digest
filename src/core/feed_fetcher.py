@@ -7,7 +7,10 @@ URL/ファイルパス/XML文字列のいずれも受け付ける）。
 
 from __future__ import annotations
 
+import calendar
 import logging
+import time
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 
@@ -15,6 +18,14 @@ from src.config import FeedConfig, FiltersConfig
 from src.core.models import Article
 
 logger = logging.getLogger(__name__)
+
+
+def _to_utc_datetime(parsed_time: time.struct_time | None) -> datetime | None:
+    """feedparserの *_parsed（UTC正規化済みのtime.struct_time）をdatetimeに変換する。"""
+    if parsed_time is None:
+        return None
+    timestamp = calendar.timegm(parsed_time)
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
 
 def fetch_feed_entries(feed: FeedConfig, source: str | None = None) -> list[Article]:
@@ -44,6 +55,9 @@ def fetch_feed_entries(feed: FeedConfig, source: str | None = None) -> list[Arti
             continue
         summary_source = getattr(entry, "summary", "") or getattr(entry, "description", "")
         published_at = getattr(entry, "published", None) or getattr(entry, "updated", None)
+        published_parsed = _to_utc_datetime(
+            getattr(entry, "published_parsed", None) or getattr(entry, "updated_parsed", None)
+        )
         articles.append(
             Article(
                 url=url,
@@ -52,18 +66,29 @@ def fetch_feed_entries(feed: FeedConfig, source: str | None = None) -> list[Arti
                 category=feed.category,
                 summary_source=summary_source,
                 published_at=published_at,
+                published_parsed=published_parsed,
             )
         )
     return articles
 
 
-def apply_filters(articles: list[Article], filters: FiltersConfig) -> list[Article]:
-    """include_keywords / exclude_keywords によるフィルタ適用。
+def apply_filters(
+    articles: list[Article], filters: FiltersConfig, now: datetime | None = None
+) -> list[Article]:
+    """include_keywords / exclude_keywords / max_age_days によるフィルタ適用。
 
     - include_keywords が空配列なら全通過。非空ならタイトルまたは本文抜粋に
       いずれかを含む記事のみ通過。
     - exclude_keywords はいずれかを含む記事を除外。
+    - max_age_days が None の場合は日付フィルタなし（既存動作を維持）。
+      指定されている場合、now - published_parsed が max_age_days 日を超える
+      記事を除外する。published_parsed が None（発行日パース不能）の場合は、
+      リポジトリの一貫したエラーハンドリング方針（フィルタは例外を投げず
+      静かに除外/素通りする）に従い、安全側に倒して除外せず素通りさせる。
     """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
     result: list[Article] = []
     for article in articles:
         haystack = f"{article.title}\n{article.summary_source}"
@@ -74,6 +99,10 @@ def apply_filters(articles: list[Article], filters: FiltersConfig) -> list[Artic
 
         if filters.exclude_keywords:
             if any(kw in haystack for kw in filters.exclude_keywords):
+                continue
+
+        if filters.max_age_days is not None and article.published_parsed is not None:
+            if now - article.published_parsed > timedelta(days=filters.max_age_days):
                 continue
 
         result.append(article)

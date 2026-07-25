@@ -70,6 +70,9 @@ class DeliveryPolicyConfig(BaseModel):
 class FiltersConfig(BaseModel):
     include_keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
+    # 発行日フィルタ。指定日数より発行日が古い記事を除外する。
+    # None（未指定）の場合は日付フィルタなし（後方互換の既定動作）。
+    max_age_days: int | None = None
 
 
 class FeedConfig(BaseModel):
