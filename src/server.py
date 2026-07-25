@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 from src.config import load_config
@@ -14,6 +15,8 @@ from src.tools.config_tools import get_config_summary, list_feeds
 from src.tools.feedback_tools import record_feedback
 from src.tools.history_tools import get_delivery_history, get_seen_articles
 from src.tools.run_tools import trigger_manual_run
+
+load_dotenv()
 
 mcp = FastMCP("news-digest")
 

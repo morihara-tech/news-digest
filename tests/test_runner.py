@@ -120,6 +120,46 @@ def test_run_digest_skips_notification_when_disabled(tmp_path, fixtures_dir, mon
         assert called == []
 
 
+def test_run_digest_skips_mark_delivered_when_no_delivery_target(
+    tmp_path, fixtures_dir, monkeypatch
+):
+    # 配信先の環境変数を未設定にする(=有効な配信先が1件も解決できない状態を再現)
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+
+    called = []
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: called.append(1))
+
+    config = _config_with_feed(fixtures_dir)
+    with StateStore(tmp_path / "digest.db") as store:
+        provider = MockLLMProvider()
+        result = run_digest(config, store, provider)
+
+        # Webhookには何も送信されていない
+        assert called == []
+
+        # 配信済み扱いにはならず、専用のステータスになっていること
+        assert result.status == "no_delivery_target"
+        assert result.error is not None
+
+        # 記事はmark_deliveredされておらず、pendingのまま残っていること
+        rows = store.get_seen_articles()
+        assert len(rows) == 3
+        assert all(row["delivered_at"] is None for row in rows)
+
+        # 次回実行時にも同じ記事が再度新着候補になる(=持ち越しされる)こと
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+        monkeypatch.setattr(httpx, "post", lambda url, json, timeout: FakeResponse())
+
+        second = run_digest(config, store, provider)
+        assert second.status == "delivered"
+        assert second.article_count == 3
+
+
 def test_run_digest_respects_max_articles_and_carries_over(tmp_path, fixtures_dir, monkeypatch):
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")
 

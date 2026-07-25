@@ -46,7 +46,7 @@ cp config.example.yaml config.yaml
 ### 4. 動作確認
 
 ```bash
-uv run news-digest run --config config.yaml --db state/digest.db
+uv run news-digest --config config.yaml --db state/digest.db run
 ```
 
 ## 主要な設定項目（config.yaml）

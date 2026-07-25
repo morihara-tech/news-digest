@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RunResult:
-    status: str  # "delivered" | "empty_notified" | "empty_skipped" | "failed"
+    status: str  # "delivered" | "empty_notified" | "empty_skipped" | "no_delivery_target" | "failed"
     article_count: int = 0
     delivered_targets: list[str] = field(default_factory=list)
     carried_over_count: int = 0
@@ -73,6 +73,20 @@ def run_digest(
         digest = build_digest(new_articles, config.digest)
 
         targets = resolve_delivery_targets(config.enabled_delivery_targets())
+        if not targets:
+            error_message = "有効な配信先が解決できませんでした（環境変数未設定等）"
+            logger.warning(
+                "配信先が解決できず配信をスキップしました: article_count=%s",
+                len(digest.articles),
+            )
+            store.finish_run(run_id, "no_delivery_target", len(digest.articles), error_message)
+            return RunResult(
+                status="no_delivery_target",
+                article_count=len(digest.articles),
+                error=error_message,
+                carried_over_count=digest.carried_over_count,
+            )
+
         try:
             delivered_targets = deliver_digest(targets, digest)
         except DeliveryError as exc:
