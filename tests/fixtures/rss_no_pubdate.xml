@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>No PubDate Sample Feed</title>
+    <link>https://example.com/no-pubdate</link>
+    <description>Feed containing an item without pubDate for max_age_days parse-failure tests</description>
+    <item>
+      <title>発行日情報がない記事</title>
+      <link>https://example.com/no-pubdate/article-without-date</link>
+      <description>この記事にはpubDate/updatedが存在しない。</description>
+    </item>
+  </channel>
+</rss>

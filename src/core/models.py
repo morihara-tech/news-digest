@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 
 @dataclass
@@ -14,7 +15,8 @@ class Article:
     feed_name: str
     category: str = "general"
     summary_source: str = ""  # 要約前の本文抜粋（RSSのdescription等）
-    published_at: str | None = None
+    published_at: str | None = None  # 表示・ログ用の生文字列（feedparserの生値）
+    published_parsed: datetime | None = None  # 発行日時のパース結果（UTC aware、フィルタ用）
     summary: str | None = None  # LLMによる要約結果（未設定なら縮退配信）
     degraded: bool = False  # True の場合、要約なしで縮退配信する
     degraded_reason: str | None = None

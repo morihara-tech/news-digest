@@ -53,6 +53,9 @@ delivery_policy:
 filters:
   include_keywords: []        # 空=全通過
   exclude_keywords: ["PR", "広告"]
+  # max_age_days: 30           # 発行日がこの日数より古い記事を除外する。
+                                # 未指定（コメントアウトのまま）の場合は日付フィルタなし（後方互換）。
+                                # 発行日がパースできない記事は除外せず素通りする。
 
 # フィード一覧（例。実際に使うフィードに置き換えること）
 feeds:
@@ -65,3 +68,7 @@ feeds:
     category: tech
     filters:
       include_keywords: ["AWS", "Kubernetes"]
+      # max_age_days: 14         # フィード単位で指定するとグローバルのfiltersを丸ごと上書きする。
+                                  # このフィードで max_age_days を書かない場合、
+                                  # グローバルの max_age_days は無効化される点に注意
+                                  # （effective_filters()はフィールド単位のマージではなく全置換のため）。
