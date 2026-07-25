@@ -1,5 +1,6 @@
 # secrets
 .env
+config.yaml
 
 # local state (sqlite db, cron logs)
 state/

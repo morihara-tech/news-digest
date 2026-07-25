@@ -1,6 +1,7 @@
 """cronから叩くCLIエントリポイント。
 
-`uv run news-digest run` のようにサブコマンドで実行する。
+`uv run news-digest --config config.yaml --db state/digest.db run` のように
+グローバルオプションの後にサブコマンドを指定して実行する。
 MCPサーバー(src/server.py)と同じ src/core のロジックを共有する。
 """
 
@@ -10,10 +11,14 @@ import argparse
 import logging
 import sys
 
+from dotenv import load_dotenv
+
 from src.config import load_config
 from src.core.runner import run_digest
 from src.core.state import StateStore
 from src.llm.factory import create_llm_provider
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
