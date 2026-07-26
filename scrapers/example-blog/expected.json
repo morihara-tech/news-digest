@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://example.com/blog/posts/first-post",
+    "title": "最初の記事です",
+    "summary_source": "これは最初の記事の要約文です。サンプルスクレイパーの動作確認用です。",
+    "published_at": "2026-07-20T09:00:00+09:00"
+  },
+  {
+    "url": "https://example.com/blog/posts/second-post",
+    "title": "2つ目の記事です",
+    "summary_source": "これは2つ目の記事の要約文です。標準ライブラリのみでパースします。",
+    "published_at": "2026-07-21T10:30:00+09:00"
+  }
+]

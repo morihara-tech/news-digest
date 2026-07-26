@@ -72,3 +72,9 @@ feeds:
                                   # このフィードで max_age_days を書かない場合、
                                   # グローバルの max_age_days は無効化される点に注意
                                   # （effective_filters()はフィールド単位のマージではなく全置換のため）。
+  - name: "Example Blog（scraper方式のサンプル）"
+    url: "https://example.com/blog"
+    category: tech
+    source_type: scraper
+    scraper_id: example-blog
+    enabled: false   # サンプル。有効化する場合はscrapers/example-blog/を対象サイトに合わせて調整すること

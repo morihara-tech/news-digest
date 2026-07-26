@@ -81,6 +81,18 @@ class FeedConfig(BaseModel):
     category: str = "general"
     enabled: bool = True
     filters: FiltersConfig | None = None
+    # rss: feedparserによるRSS/Atom取得（既定）。scraper: RSS/Atomがないサイト向けに
+    # scrapers/{scraper_id}/scraper.py のfetch()を呼び出す方式。
+    source_type: Literal["rss", "scraper"] = "rss"
+    scraper_id: str | None = None
+
+    @model_validator(mode="after")
+    def _check_scraper_id_required(self) -> "FeedConfig":
+        if self.source_type == "scraper" and not self.scraper_id:
+            raise ValueError(
+                f"フィード '{self.name}': source_type=scraper の場合は scraper_id が必須です"
+            )
+        return self
 
     def effective_filters(self, global_filters: FiltersConfig) -> FiltersConfig:
         """フィード単位のfiltersが指定されていればそれを優先（上書き）し、

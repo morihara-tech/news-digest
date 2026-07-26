@@ -44,6 +44,28 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scrapers_check(args: argparse.Namespace) -> int:
+    with StateStore(args.db) as store:
+        rows = store.get_latest_source_health()
+
+    if not rows:
+        print("source_health レコードがありません（scraper種別のフィードが未実行、または未設定です）")
+        return 0
+
+    has_issue = False
+    header = f"{'scraper_id':<24}{'checked_at':<28}{'status':<8}{'count':<7}error"
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        if row["status"] != "ok":
+            has_issue = True
+        print(
+            f"{row['scraper_id']:<24}{row['checked_at']:<28}{row['status']:<8}"
+            f"{row['article_count']:<7}{row['error'] or ''}"
+        )
+    return 1 if has_issue else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="news-digest")
     parser.add_argument(
@@ -56,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="配信バッチを1回実行する")
     run_parser.set_defaults(func=cmd_run)
+
+    scrapers_parser = subparsers.add_parser("scrapers", help="スクレイパー関連コマンド")
+    scrapers_subparsers = scrapers_parser.add_subparsers(
+        dest="scrapers_command", required=True
+    )
+    check_parser = scrapers_subparsers.add_parser("check", help="source_healthの状態を確認する")
+    check_parser.set_defaults(func=cmd_scrapers_check)
 
     return parser
 

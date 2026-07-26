@@ -70,3 +70,31 @@ def test_feedback_and_delivery_runs(tmp_path):
         assert len(runs) == 1
         assert runs[0]["status"] == "delivered"
         assert runs[0]["article_count"] == 3
+
+
+def test_record_source_health_and_get_latest(tmp_path):
+    db_path = tmp_path / "digest.db"
+    with StateStore(db_path) as store:
+        store.record_source_health("example-blog", status="ok", article_count=2)
+        rows = store.get_latest_source_health()
+        assert len(rows) == 1
+        assert rows[0]["scraper_id"] == "example-blog"
+        assert rows[0]["status"] == "ok"
+        assert rows[0]["article_count"] == 2
+        assert rows[0]["error"] is None
+
+
+def test_get_latest_source_health_returns_only_latest_per_scraper(tmp_path):
+    db_path = tmp_path / "digest.db"
+    with StateStore(db_path) as store:
+        store.record_source_health("example-blog", status="ok", article_count=2)
+        store.record_source_health("example-blog", status="error", article_count=0, error="boom")
+        store.record_source_health("other-blog", status="empty", article_count=0)
+
+        rows = store.get_latest_source_health()
+        rows_by_scraper = {row["scraper_id"]: row for row in rows}
+        assert len(rows) == 2
+        # example-blogは最新(2回目)のstatus=errorが優先される
+        assert rows_by_scraper["example-blog"]["status"] == "error"
+        assert rows_by_scraper["example-blog"]["error"] == "boom"
+        assert rows_by_scraper["other-blog"]["status"] == "empty"

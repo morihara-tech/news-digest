@@ -9,7 +9,7 @@ from src.config import AppConfig, load_config
 def test_load_config_example_yaml_is_valid():
     config = load_config("config.example.yaml")
     assert config.llm.provider == "claude"
-    assert len(config.feeds) == 2
+    assert len(config.feeds) == 3
     assert config.digest.max_articles == 20
     assert config.retention.seen_ttl_days == 90
 
@@ -49,3 +49,29 @@ def test_duplicate_feed_names_rejected():
     }
     with pytest.raises(ValueError):
         AppConfig.model_validate(raw)
+
+
+def test_scraper_source_type_requires_scraper_id():
+    raw = {
+        "feeds": [
+            {"name": "no-scraper-id", "url": "https://example.com/blog", "source_type": "scraper"},
+        ]
+    }
+    with pytest.raises(ValueError):
+        AppConfig.model_validate(raw)
+
+
+def test_scraper_source_type_with_scraper_id_is_valid():
+    raw = {
+        "feeds": [
+            {
+                "name": "example-blog",
+                "url": "https://example.com/blog",
+                "source_type": "scraper",
+                "scraper_id": "example-blog",
+            },
+        ]
+    }
+    config = AppConfig.model_validate(raw)
+    assert config.feeds[0].source_type == "scraper"
+    assert config.feeds[0].scraper_id == "example-blog"
