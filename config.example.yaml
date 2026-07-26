@@ -59,10 +59,6 @@ filters:
 
 # フィード一覧（例。実際に使うフィードに置き換えること）
 feeds:
-  - name: "TechCrunch Japan"
-    url: "https://jp.techcrunch.com/feed/"
-    category: tech
-    enabled: true
   - name: "Publickey"
     url: "https://www.publickey1.jp/atom.xml"
     category: tech
