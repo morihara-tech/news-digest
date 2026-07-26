@@ -167,9 +167,11 @@ uv run news-digest --db state/digest.db scrapers check
 いずれかのスクレイパーが `ok` 以外の状態であれば終了コード1を返すため、
 cron等の監視に組み込むこともできます。
 
-なお、壊れたスクレイパーの**修正**はClaude Skillを人が起動して行う
-Human-in-the-loopの運用を想定しており、本リポジトリの範囲では自動修正は
-行いません（Skill定義自体は別Issueで対応予定です）。
+なお、壊れたスクレイパーの**修正**は `.claude/skills/scraper/` にSkill定義済みで、
+`scrapers check` で壊れ（`status: error` / `empty`）を検知した際はこのSkillを
+人が起動して修正するHuman-in-the-loopの運用を想定しており、本リポジトリの範囲では
+自動修正は行いません。新しいサイトに対応するスクレイパーを新規作成する場合も、
+同じSkillの生成（author）モードを使ってください。
 
 ### 重複統合・既読管理・冪等性
 
