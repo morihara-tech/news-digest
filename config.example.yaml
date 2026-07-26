@@ -29,10 +29,11 @@ delivery:
     webhook_url_env: SLACK_WEBHOOK_URL
     enabled: true
 
-# 実行スケジュール（cron側が参照。バッチ自体はステートレス）
+# 実行スケジュール（`news-digest schedule install` でOSスケジューラ(cron/systemd/
+# launchd)へ自動登録される。バッチ自体はステートレス）
 schedule:
   timezone: Asia/Tokyo
-  times: ["08:00"]            # 参考値。実トリガーはcron
+  times: ["08:00"]            # news-digest schedule install で実際にOSスケジューラへ登録される
   notify_on_empty: true       # 新着0件の日も「本日は新着なし」を通知する
   treat_updated_as_new: false # 同一URLの内容更新は再配信しない
 
