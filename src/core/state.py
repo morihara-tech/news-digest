@@ -5,6 +5,7 @@
   delivered_at を確定させる冪等設計。
 - feedback: フィードバック記録。
 - delivery_runs: 配信バッチの実行履歴。
+- source_health: scraper種別フィードの取得結果（健全性）記録。
 """
 
 from __future__ import annotations
@@ -37,6 +38,15 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE TABLE IF NOT EXISTS delivery_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    article_count INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS source_health (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scraper_id TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
     status TEXT NOT NULL,
     article_count INTEGER NOT NULL DEFAULT 0,
     error TEXT
@@ -164,6 +174,30 @@ class StateStore:
     def get_delivery_runs(self, limit: int = 20) -> list[sqlite3.Row]:
         return self._conn.execute(
             "SELECT * FROM delivery_runs ORDER BY run_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    # --- source_health -----------------------------------------------------
+
+    def record_source_health(
+        self, scraper_id: str, status: str, article_count: int = 0, error: str | None = None
+    ) -> None:
+        """スクレイパーの取得結果を記録する。status は 'ok' | 'empty' | 'error'。"""
+        self._conn.execute(
+            "INSERT INTO source_health (scraper_id, checked_at, status, article_count, error) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (scraper_id, _now_iso(), status, article_count, error),
+        )
+        self._conn.commit()
+
+    def get_latest_source_health(self, limit: int = 100) -> list[sqlite3.Row]:
+        """scraper_idごとの最新1件のみをchecked_at降順で返す。"""
+        return self._conn.execute(
+            """
+            SELECT * FROM source_health
+            WHERE id IN (SELECT MAX(id) FROM source_health GROUP BY scraper_id)
+            ORDER BY checked_at DESC LIMIT ?
+            """,
+            (limit,),
         ).fetchall()
 
 

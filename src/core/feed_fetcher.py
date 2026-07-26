@@ -16,6 +16,8 @@ import feedparser
 
 from src.config import FeedConfig, FiltersConfig
 from src.core.models import Article
+from src.core.scraper_fetcher import fetch_via_scraper
+from src.core.state import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -109,14 +111,23 @@ def apply_filters(
     return result
 
 
-def fetch_all(feeds: list[FeedConfig], global_filters: FiltersConfig) -> list[Article]:
-    """有効な全フィードを取得し、フィード単位/グローバルのフィルタを適用して返す。"""
+def fetch_all(
+    feeds: list[FeedConfig], global_filters: FiltersConfig, store: StateStore | None = None
+) -> list[Article]:
+    """有効な全フィードを取得し、フィード単位/グローバルのフィルタを適用して返す。
+
+    source_type に応じて既存RSS取得(fetch_feed_entries)とscraper_fetcher.fetch_via_scraper
+    にディスパッチする。store はscraper種別の健全性記録(source_health)にのみ使う。
+    """
     all_articles: list[Article] = []
     for feed in feeds:
         if not feed.enabled:
             continue
         try:
-            articles = fetch_feed_entries(feed)
+            if feed.source_type == "scraper":
+                articles = fetch_via_scraper(feed, store=store)
+            else:
+                articles = fetch_feed_entries(feed)
             effective_filters = feed.effective_filters(global_filters)
             articles = apply_filters(articles, effective_filters)
         except Exception:  # noqa: BLE001 - 1フィードの想定外失敗が他フィードをブロックしない

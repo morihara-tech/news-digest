@@ -85,6 +85,8 @@ uv run news-digest --config config.yaml --db state/digest.db run
 | `retention.seen_ttl_days` | 既読（配信済み）とみなすTTL日数。既定90日 |
 | `filters.include_keywords` / `filters.exclude_keywords` | グローバルフィルタ。フィード単位の `filters` が指定されていればそちらが優先（上書き）される |
 | `feeds[].filters` | フィード単位のキーワードフィルタ。指定時はグローバルフィルタより優先 |
+| `feeds[].source_type` | `rss`（既定、feedparserによるRSS/Atom取得） / `scraper`（RSS/Atomがないサイト向けのスクレイパー方式） |
+| `feeds[].scraper_id` | `source_type: scraper` の場合に必須。`scrapers/{scraper_id}/scraper.py` を参照する |
 
 ### サイト（フィード）ごとの独立配信
 
@@ -121,6 +123,55 @@ RSS取得〜要約〜配信は、サイト（フィード）ごとに独立し�
 - `llm.max_articles_to_summarize` を超えた記事も同様に縮退配信されます。
   ただしこちらのコスト上限判定は、サイト分割より前にサイト横断で**グローバルに
   1回だけ**行われる点が要約失敗判定と異なります。
+
+### RSS/Atomがないサイトへの対応（scraper方式）
+
+RSS/Atomフィードを提供していないサイトは、`config.yaml` の該当フィードで
+`source_type: scraper` と `scraper_id` を指定することで、専用のスクレイパー
+スクリプト経由で記事を取得できます。
+
+```yaml
+feeds:
+  - name: "Example Blog"
+    url: "https://example.com/blog"
+    category: tech
+    source_type: scraper
+    scraper_id: example-blog
+```
+
+スクレイパーの契約は以下の通りです。
+
+- `scrapers/{scraper_id}/scraper.py` に `fetch(options: dict, http: httpx.Client) -> list[dict]`
+  を実装すること。
+- `options` は `{"url": フィードのurl, "feed_name": フィード名, "category": カテゴリ}`。
+- 戻り値の各dictは `url` / `title` が必須（欠落・空の場合は契約違反として取得失敗扱いになる）。
+  `summary_source` / `published_at` / `category` は任意。
+- スクレイパーは `src/core/models.py` の `Article` など、news-digest本体のモジュールを
+  直接importしないこと。スクレイパーは疎結合な `list[dict]` の返却のみに責任を持ち、
+  本体側（`src/core/scraper_fetcher.py`）が `Article` への変換を担う設計になっています。
+  これにより、あるサイトのレイアウト崩れ・スクレイパーのバグによる影響がそのサイトの
+  取得失敗に限定され、本体のデータモデルやパイプライン全体に波及しません。
+- サンプル実装として `scrapers/example-blog/` を参照してください。`sample.html`
+  （取得対象ページを模したオフラインfixture）と `expected.json`（`fetch()` が返すべき
+  期待値）を併せてコミットし、`tests/test_scraper_fetcher.py` のようにテストで
+  動作を検証することを推奨します。
+
+スクレイパーの取得結果（0件取得・例外・スキーマ不一致などの壊れ検知）は
+sqlite3の `source_health` テーブルに自動記録されます。以下のコマンドで
+最新の状態を確認できます。
+
+```bash
+uv run news-digest --db state/digest.db scrapers check
+```
+
+いずれかのスクレイパーが `ok` 以外の状態であれば終了コード1を返すため、
+cron等の監視に組み込むこともできます。
+
+なお、壊れたスクレイパーの**修正**は `.claude/skills/scraper/` にSkill定義済みで、
+`scrapers check` で壊れ（`status: error` / `empty`）を検知した際はこのSkillを
+人が起動して修正するHuman-in-the-loopの運用を想定しており、本リポジトリの範囲では
+自動修正は行いません。新しいサイトに対応するスクレイパーを新規作成する場合も、
+同じSkillの生成（author）モードを使ってください。
 
 ### 重複統合・既読管理・冪等性
 
@@ -347,15 +398,18 @@ src/
   cli.py        CLIエントリポイント（cronバッチ実行等）
   config.py     pydanticベースの設定モデル・ロード処理
   core/         サーバーとCLIが共有するコアロジック
-    feed_fetcher.py  feedparserベースのフィード取得・フィルタ適用
-    dedup.py         URL基準の重複統合
-    state.py         sqlite3状態管理
-    digest.py        要約・ダイジェスト組み立て
-    delivery.py      Slack/Google Chat配信
-    runner.py        配信バッチのオーケストレーション
+    feed_fetcher.py    feedparserベースのフィード取得・フィルタ適用（scraper方式へのディスパッチも担う）
+    scraper_fetcher.py RSS/Atomがないサイト向けのスクレイパー経由の記事取得
+    dedup.py           URL基準の重複統合
+    state.py           sqlite3状態管理（source_healthを含む）
+    digest.py          要約・ダイジェスト組み立て
+    delivery.py        Slack/Google Chat配信
+    runner.py          配信バッチのオーケストレーション
   scheduler/    OSスケジューラ(cron/systemd/launchd)への自動登録処理
   llm/          LLMProvider抽象化と各プロバイダー実装
   tools/        MCPツール実装（設定管理・履歴参照・手動実行・フィードバック記録）
+scrapers/       source_type: scraper のフィード用スクレイパースクリプト（サイトごとに1ディレクトリ）
+  example-blog/ サンプルスクレイパー（sample.html/expected.jsonを併せて配置）
 tests/
   fixtures/     ローカル固定RSS/Atom XML
   test_*.py

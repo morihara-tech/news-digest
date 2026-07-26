@@ -86,7 +86,7 @@ def run_digest(
     """
     run_id = store.start_run()
     try:
-        raw_articles = fetch_all(config.feeds, config.filters)
+        raw_articles = fetch_all(config.feeds, config.filters, store)
         new_articles = filter_new_articles(raw_articles, store, config.retention.seen_ttl_days)
 
         for article in new_articles:

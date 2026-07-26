@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.config import FeedConfig, FiltersConfig
 from src.core.feed_fetcher import apply_filters, fetch_all, fetch_feed_entries
+from src.core.models import Article
 
 
 def test_fetch_feed_entries_rss(fixtures_dir):
@@ -182,3 +183,53 @@ def test_feed_level_filters_override_global(monkeypatch, fixtures_dir):
     # グローバルのexclude_keywordsは無視され、フィード単位のinclude_keywordsのみ適用される
     assert len(filtered) == 1
     assert "データベース" in filtered[0].title
+
+
+def test_fetch_all_dispatches_scraper_source_type(monkeypatch):
+    """source_type="scraper"のフィードはfetch_via_scraperにディスパッチされること。"""
+    calls = []
+
+    def fake_fetch_via_scraper(feed, store=None):
+        calls.append((feed.name, store))
+        return [
+            Article(
+                url="https://example.com/blog/post-1",
+                title="スクレイパー記事",
+                feed_name=feed.name,
+                category=feed.category,
+            )
+        ]
+
+    import src.core.feed_fetcher as feed_fetcher_module
+
+    monkeypatch.setattr(feed_fetcher_module, "fetch_via_scraper", fake_fetch_via_scraper)
+
+    feed = FeedConfig(
+        name="Example Blog",
+        url="https://example.com/blog",
+        category="tech",
+        source_type="scraper",
+        scraper_id="example-blog",
+    )
+    sentinel_store = object()
+    articles = fetch_all([feed], FiltersConfig(), store=sentinel_store)
+
+    assert len(calls) == 1
+    assert calls[0] == ("Example Blog", sentinel_store)
+    assert len(articles) == 1
+    assert articles[0].title == "スクレイパー記事"
+
+
+def test_fetch_all_rss_source_type_unaffected_by_scraper_dispatch(fixtures_dir, monkeypatch):
+    """既存のRSS経路(source_type既定値="rss")はscraper分岐の影響を受けず、
+    fetch_via_scraperが一切呼ばれないこと(後方互換の確認)。"""
+    import src.core.feed_fetcher as feed_fetcher_module
+
+    def fail_if_called(feed, store=None):
+        raise AssertionError("RSSフィードでfetch_via_scraperが呼ばれるべきではない")
+
+    monkeypatch.setattr(feed_fetcher_module, "fetch_via_scraper", fail_if_called)
+
+    feed = FeedConfig(name="Tech Sample", url=str(fixtures_dir / "rss_tech.xml"), category="tech")
+    articles = fetch_all([feed], FiltersConfig())
+    assert len(articles) == 3
