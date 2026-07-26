@@ -10,13 +10,31 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.config import load_config
+from src.config import AppConfig, load_config
 from src.core.runner import run_digest
 from src.core.state import StateStore
 from src.llm.factory import create_llm_provider
+from src.scheduler.base import (
+    WRAPPER_SCRIPT_RELATIVE_PATH,
+    SchedulerBackend,
+    warn_if_timezone_mismatch,
+    write_wrapper_script,
+)
+from src.scheduler.cron import CronBackend
+from src.scheduler.detect import (
+    BACKEND_CRON,
+    BACKEND_LAUNCHD,
+    BACKEND_SYSTEMD,
+    SUPPORTED_BACKENDS,
+    detect_backend,
+)
+from src.scheduler.launchd import LaunchdBackend
+from src.scheduler.manual import render_manual_instructions
+from src.scheduler.systemd import SystemdBackend
 
 load_dotenv()
 
@@ -66,6 +84,102 @@ def cmd_scrapers_check(args: argparse.Namespace) -> int:
     return 1 if has_issue else 0
 
 
+def _repo_root() -> Path:
+    """リポジトリルートのパスを返す（src/cli.py の2階層上）。"""
+    return Path(__file__).resolve().parent.parent
+
+
+def _build_backend(
+    backend_name: str, config: AppConfig, wrapper_script_path: Path
+) -> SchedulerBackend:
+    timezone = config.schedule.timezone
+    times = config.schedule.times
+    if backend_name == BACKEND_CRON:
+        return CronBackend(timezone, times, wrapper_script_path)
+    if backend_name == BACKEND_SYSTEMD:
+        return SystemdBackend(timezone, times, wrapper_script_path)
+    if backend_name == BACKEND_LAUNCHD:
+        return LaunchdBackend(timezone, times, wrapper_script_path)
+    raise ValueError(f"未対応のスケジューラです: {backend_name}")
+
+
+def cmd_schedule_install(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    repo_root = _repo_root()
+
+    mismatch_msg = warn_if_timezone_mismatch(config.schedule.timezone)
+    if mismatch_msg:
+        logger.warning(mismatch_msg)
+
+    try:
+        backend_name = detect_backend(args.scheduler)
+        wrapper_script_path = write_wrapper_script(repo_root, args.config, args.db)
+        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend.install()
+    except Exception as exc:
+        logger.error("スケジューラへの自動登録に失敗しました: %s", exc)
+        print(render_manual_instructions(config, repo_root, args.config, args.db))
+        return 1
+
+    logger.info("スケジューラ(%s)への登録が完了しました。", backend_name)
+    return 0
+
+
+def cmd_schedule_uninstall(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    repo_root = _repo_root()
+    try:
+        backend_name = detect_backend(args.scheduler)
+        wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
+        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend.uninstall()
+    except Exception as exc:
+        logger.error("スケジューラ登録の削除に失敗しました: %s", exc)
+        return 1
+    return 0
+
+
+def cmd_schedule_status(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    repo_root = _repo_root()
+    try:
+        backend_name = detect_backend(args.scheduler)
+        wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
+        backend = _build_backend(backend_name, config, wrapper_script_path)
+        installed = backend.status()
+    except Exception as exc:
+        logger.error("スケジューラ登録状況の確認に失敗しました: %s", exc)
+        return 1
+
+    print(f"scheduler={backend_name} installed={installed}")
+    return 0
+
+
+def cmd_schedule_preview(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    repo_root = _repo_root()
+    try:
+        backend_name = detect_backend(args.scheduler)
+        wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
+        backend = _build_backend(backend_name, config, wrapper_script_path)
+    except Exception as exc:
+        logger.error("プレビューの生成に失敗しました: %s", exc)
+        return 1
+
+    print(f"# scheduler={backend_name}")
+    print(backend.render())
+    return 0
+
+
+def _add_scheduler_option(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "--scheduler",
+        choices=SUPPORTED_BACKENDS,
+        default=None,
+        help="使用するスケジューラを明示的に指定する（未指定時はOS判定に基づき自動選択）",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="news-digest")
     parser.add_argument(
@@ -85,6 +199,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_parser = scrapers_subparsers.add_parser("check", help="source_healthの状態を確認する")
     check_parser.set_defaults(func=cmd_scrapers_check)
+
+    schedule_parser = subparsers.add_parser(
+        "schedule", help="OSスケジューラ(cron/systemd/launchd)への登録を管理する"
+    )
+    schedule_subparsers = schedule_parser.add_subparsers(
+        dest="schedule_command", required=True
+    )
+
+    install_parser = schedule_subparsers.add_parser(
+        "install", help="OSスケジューラへ冪等に登録する"
+    )
+    _add_scheduler_option(install_parser)
+    install_parser.set_defaults(func=cmd_schedule_install)
+
+    uninstall_parser = schedule_subparsers.add_parser(
+        "uninstall", help="OSスケジューラから自社エントリのみを削除する"
+    )
+    _add_scheduler_option(uninstall_parser)
+    uninstall_parser.set_defaults(func=cmd_schedule_uninstall)
+
+    status_parser = schedule_subparsers.add_parser(
+        "status", help="OSスケジューラへの登録状況を表示する"
+    )
+    _add_scheduler_option(status_parser)
+    status_parser.set_defaults(func=cmd_schedule_status)
+
+    preview_parser = schedule_subparsers.add_parser(
+        "preview", help="実際には登録せず、登録内容のプレビューのみを表示する"
+    )
+    _add_scheduler_option(preview_parser)
+    preview_parser.set_defaults(func=cmd_schedule_preview)
 
     return parser
 

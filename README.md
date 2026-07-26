@@ -189,7 +189,75 @@ cron等の監視に組み込むこともできます。
   なります（成功した他サイトの記事は通常どおり `delivered_at` が確定します）。
 - `retention.seen_ttl_days`（既定90日）以内に配信済みの同一URLは重複配信しません。
 
-## cron実行時の注意（PATH・環境変数）
+## OSスケジューラへの自動登録（`news-digest schedule`）
+
+配信バッチを定期実行するには、`news-digest schedule` サブコマンドで
+OSスケジューラ（cron/systemd/launchd）へ自動登録します。`config.yaml` の
+`schedule.timezone` / `schedule.times` を読み取り、対応するスケジューラへ
+冪等に登録するため、手動でcrontabやunitファイルを編集する必要はありません。
+
+まず、実際に登録される内容をプレビューで確認します。
+
+```bash
+uv run news-digest --config config.yaml --db state/digest.db schedule preview
+```
+
+実行環境（OS判定: Linuxはsystemd user instanceが利用可能ならsystemd優先、
+利用不可ならcronにフォールバック。macOSはlaunchd）に応じて選ばれたスケジューラ名
+（`# scheduler=cron` 等）と、実際に登録される内容（cronならcrontabに追記される行、
+systemdならunit/timerファイルの内容、launchdならplistの内容）が標準出力に
+表示されます。`--scheduler cron|systemd|launchd` オプションを指定すると、
+OS判定を上書きしてバックエンドを明示的に選択できます。
+
+内容を確認したら、以下のコマンドで実際に登録します。
+
+```bash
+uv run news-digest --config config.yaml --db state/digest.db schedule install
+```
+
+グローバルオプション（`--config` / `--db`）はサブコマンド（`schedule`）より
+前に指定する必要があります。順序を誤らないよう注意してください。
+
+`install` は冪等です。既に登録済みの場合は内容を更新するだけで、重複登録は
+されません。内部的には、`uv` コマンドの絶対パスを解決して埋め込んだラッパー
+スクリプト（`state/run-news-digest.sh`。`.gitignore` 対象で `install` 実行時に
+生成されます）を経由してバッチを起動するため、後述するcronのPATH問題は
+自動登録では緩和されます。また、`config.yaml` の `schedule.timezone` とOSの
+タイムゾーンが異なる場合は警告ログが出力されます。
+
+登録状況の確認・登録解除は以下のコマンドで行います。
+
+```bash
+# 登録状況を確認する（例: scheduler=cron installed=true）
+uv run news-digest --config config.yaml --db state/digest.db schedule status
+
+# 自社エントリのみを冪等に削除する
+uv run news-digest --config config.yaml --db state/digest.db schedule uninstall
+```
+
+`install` が失敗した場合は、標準出力に手動設定手順（ラッパースクリプトの
+作成方法、cron/systemd/launchdそれぞれの設定内容）が表示されるので、それに
+従ってください。
+
+### `claude-code-cli` プロバイダーを使う場合の注意
+
+Claude Code CLIの認証がOSキーチェーンやログインセッションに紐づく
+サブスクリプション認証の場合、cronのような非対話バッチジョブからは
+その認証情報に到達できないことがあります。この場合は、ユーザーセッション内で
+動作する **systemd user timer**（Linux）や **launchd user agent**（macOS）の
+利用を推奨します。これらはログインセッションの文脈で実行されるため、CLIの
+認証情報への到達性が確保されやすくなります。`schedule install` のOS自動判定が
+Linuxでsystemdを優先しフォールバック時のみcronを使う設計になっているのは、
+この事情とも整合しています。
+
+## 自動登録が使えない場合の参考（手動crontab/systemd/launchd例）
+
+`schedule install` が使えない環境（実行ユーザーにcrontab編集権限がない、
+systemd/launchdが使えないコンテナ環境など）向けに、手動設定の参考として
+crontab例・systemd unit例・launchd plist例を残します。これらは
+`schedule install` が生成する内容のイメージでもあります。
+
+### PATH・環境変数の注意（手動設定時）
 
 cronジョブは非対話シェルで実行され、ログインシェルの `PATH` や環境変数を
 引き継ぎません。`uv` コマンドがcrontab内で見つからない、`.env` の値が
@@ -205,19 +273,6 @@ cronジョブは非対話シェルで実行され、ログインシェルの `PA
 # 毎朝8時に実行する例
 0 8 * * * cd /path/to/news-digest && /home/user/.local/bin/uv run news-digest run >> state/cron.log 2>&1
 ```
-
-## cron vs systemd user timer / launchd user agent
-
-- **cron**: 非対話・環境変数が最小限しか引き継がれません。`ANTHROPIC_API_KEY` の
-  ような値はcrontab内で明示的に設定するか、`.env` ファイル経由で読み込む設計に
-  する必要があります。`llm.provider: claude` や `local-ai` のようにAPIキー/HTTPで
-  完結するプロバイダーであればcronで問題なく動作します。
-- **`claude-code-cli` プロバイダーを使う場合の注意**: Claude Code CLIの認証が
-  OSキーチェーンやログインセッションに紐づくサブスクリプション認証の場合、
-  cronのような非対話バッチジョブからはその認証情報に到達できないことがあります。
-  この場合は、ユーザーセッション内で動作する **systemd user timer**（Linux）や
-  **launchd user agent**（macOS）の利用を推奨します。これらはログインセッションの
-  文脈で実行されるため、CLIの認証情報への到達性が確保されやすくなります。
 
 ### systemd user timer の例（Linux）
 
@@ -350,6 +405,7 @@ src/
     digest.py          要約・ダイジェスト組み立て
     delivery.py        Slack/Google Chat配信
     runner.py          配信バッチのオーケストレーション
+  scheduler/    OSスケジューラ(cron/systemd/launchd)への自動登録処理
   llm/          LLMProvider抽象化と各プロバイダー実装
   tools/        MCPツール実装（設定管理・履歴参照・手動実行・フィードバック記録）
 scrapers/       source_type: scraper のフィード用スクレイパースクリプト（サイトごとに1ディレクトリ）

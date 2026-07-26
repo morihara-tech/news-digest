@@ -92,7 +92,9 @@ Slack / Google Chat のどちらを使うか（両方の設定も可能）を確
 
 - `digest.max_articles`（1回の配信件数上限。既定20）
 - `schedule.notify_on_empty`（新着0件の日も通知するか。既定true）
-- `schedule.timezone` / `schedule.times`（参考値。実トリガーはcron等）
+- `schedule.timezone` / `schedule.times`（これらの値は、後述の2-5節で
+  `news-digest schedule install` を実行するとOSスケジューラ（cron/systemd/launchd）
+  へ実際に自動登録され、配信バッチの起動時刻を決定します）
 - `retention.seen_ttl_days`（既読とみなすTTL日数。既定90）
 
 ## 2. 実行手順
@@ -145,6 +147,45 @@ uv run news-digest --config config.yaml --db state/digest.db run
 配信が成功したかどうかを一緒に確認してください。失敗している場合は、
 ログの内容をもとに原因（Webhook URLの誤り、APIキー未設定など）を切り分けて
 案内してください。
+
+### 2-5. スケジュール登録（同意ベース）
+
+試験実行の確認が済んだら、`schedule.timezone` / `schedule.times` に従って
+配信バッチを定期実行するために、OSスケジューラ（cron/systemd/launchd）への
+登録を以下の手順で進めてください。試験実行と同様、ユーザーの同意なしに
+登録コマンドを実行しないでください。
+
+1. まず登録内容をプレビューするため、以下のコマンドを実行してください。
+
+   ```bash
+   uv run news-digest --config config.yaml --db state/digest.db schedule preview
+   ```
+
+   グローバルオプション（`--config` / `--db`）はサブコマンド（`schedule`）より
+   前に指定する必要があります。順序を誤らないよう注意してください。
+
+   このコマンドは実際には何も登録せず、どのスケジューラ（cron/systemd/launchd
+   のいずれか。未指定時はOS判定に基づき自動選択されます）が選ばれたか、また
+   実際に登録される内容（crontabの行、systemd unit/timerファイルの内容、
+   launchd plistの内容のいずれか）を標準出力に表示するだけです。
+
+2. `preview` の出力をそのままユーザーに提示し、この内容で登録してよいか
+   同意を得てください。同意が得られるまで次のステップに進まないでください。
+
+3. 同意が得られたら、以下のコマンドで実際に登録してください。
+
+   ```bash
+   uv run news-digest --config config.yaml --db state/digest.db schedule install
+   ```
+
+   このコマンドは冪等です（既に登録済みの場合は内容を更新するだけで、
+   重複登録はされません）。
+
+4. `install` が失敗し、非ゼロ終了した場合は、コマンドが標準出力に表示する
+   手動設定手順をそのままユーザーに提示し、その場で案内を完結させてください。
+   README等の別ドキュメントを参照するよう誘導せず、表示された手順（ラッパー
+   スクリプトの作成方法、cron/systemd/launchdそれぞれの手動設定内容）を
+   使ってその場で対応方法を案内してください。
 
 ## 3. 注意事項
 

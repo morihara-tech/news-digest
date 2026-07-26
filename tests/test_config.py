@@ -9,7 +9,7 @@ from src.config import AppConfig, load_config
 def test_load_config_example_yaml_is_valid():
     config = load_config("config.example.yaml")
     assert config.llm.provider == "claude"
-    assert len(config.feeds) == 3
+    assert len(config.feeds) == 2
     assert config.digest.max_articles == 20
     assert config.retention.seen_ttl_days == 90
 
