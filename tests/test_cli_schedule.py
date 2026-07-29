@@ -61,7 +61,7 @@ class _FailingBackend(_FakeBackend):
 
 def test_cmd_schedule_preview_prints_render(config_path: Path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "detect_backend", lambda override: "cron")
-    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path: _FakeBackend())
+    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path, **kwargs: _FakeBackend())
 
     parser = cli.build_parser()
     args = parser.parse_args(["--config", str(config_path), "schedule", "preview"])
@@ -79,7 +79,7 @@ def test_cmd_schedule_install_success(config_path: Path, monkeypatch, tmp_path: 
         cli, "write_wrapper_script", lambda repo_root, config, db: tmp_path / "wrapper.sh"
     )
     backend = _FakeBackend()
-    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path: backend)
+    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path, **kwargs: backend)
 
     parser = cli.build_parser()
     args = parser.parse_args(["--config", str(config_path), "schedule", "install"])
@@ -97,7 +97,7 @@ def test_cmd_schedule_install_failure_prints_manual_instructions(
     monkeypatch.setattr(
         cli, "write_wrapper_script", lambda repo_root, config, db: tmp_path / "wrapper.sh"
     )
-    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path: _FailingBackend())
+    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path, **kwargs: _FailingBackend())
 
     parser = cli.build_parser()
     args = parser.parse_args(["--config", str(config_path), "schedule", "install"])
@@ -112,7 +112,7 @@ def test_cmd_schedule_uninstall_calls_backend(config_path: Path, monkeypatch):
     monkeypatch.setattr(cli, "detect_backend", lambda override: "cron")
     backend = _FakeBackend()
     backend.installed = True
-    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path: backend)
+    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path, **kwargs: backend)
 
     parser = cli.build_parser()
     args = parser.parse_args(["--config", str(config_path), "schedule", "uninstall"])
@@ -126,7 +126,7 @@ def test_cmd_schedule_status_prints_status(config_path: Path, monkeypatch, capsy
     monkeypatch.setattr(cli, "detect_backend", lambda override: "cron")
     backend = _FakeBackend()
     backend.installed = True
-    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path: backend)
+    monkeypatch.setattr(cli, "_build_backend", lambda name, config, path, **kwargs: backend)
 
     parser = cli.build_parser()
     args = parser.parse_args(["--config", str(config_path), "schedule", "status"])
