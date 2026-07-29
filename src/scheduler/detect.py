@@ -16,8 +16,9 @@ import subprocess
 BACKEND_CRON = "cron"
 BACKEND_SYSTEMD = "systemd"
 BACKEND_LAUNCHD = "launchd"
+BACKEND_WINDOWS = "windows"
 
-SUPPORTED_BACKENDS = (BACKEND_CRON, BACKEND_SYSTEMD, BACKEND_LAUNCHD)
+SUPPORTED_BACKENDS = (BACKEND_CRON, BACKEND_SYSTEMD, BACKEND_LAUNCHD, BACKEND_WINDOWS)
 
 
 def get_platform_system() -> str:
@@ -82,6 +83,8 @@ def detect_backend(override: str | None = None) -> str:
         if is_systemd_user_instance_available():
             return BACKEND_SYSTEMD
         return BACKEND_CRON
+    if system == "Windows":
+        return BACKEND_WINDOWS
 
     raise ValueError(
         f"未対応のOSです: {system}. --scheduler オプションで明示的に指定してください。"

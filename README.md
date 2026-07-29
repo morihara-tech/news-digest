@@ -192,9 +192,10 @@ cron等の監視に組み込むこともできます。
 ## OSスケジューラへの自動登録（`news-digest schedule`）
 
 配信バッチを定期実行するには、`news-digest schedule` サブコマンドで
-OSスケジューラ（cron/systemd/launchd）へ自動登録します。`config.yaml` の
-`schedule.timezone` / `schedule.times` を読み取り、対応するスケジューラへ
-冪等に登録するため、手動でcrontabやunitファイルを編集する必要はありません。
+OSスケジューラ（cron/systemd/launchd/Windowsタスクスケジューラ）へ自動登録します。
+`config.yaml` の `schedule.timezone` / `schedule.times` を読み取り、対応する
+スケジューラへ冪等に登録するため、手動でcrontabやunitファイルを編集する
+必要はありません。
 
 まず、実際に登録される内容をプレビューで確認します。
 
@@ -203,11 +204,12 @@ uv run news-digest --config config.yaml --db state/digest.db schedule preview
 ```
 
 実行環境（OS判定: Linuxはsystemd user instanceが利用可能ならsystemd優先、
-利用不可ならcronにフォールバック。macOSはlaunchd）に応じて選ばれたスケジューラ名
-（`# scheduler=cron` 等）と、実際に登録される内容（cronならcrontabに追記される行、
-systemdならunit/timerファイルの内容、launchdならplistの内容）が標準出力に
-表示されます。`--scheduler cron|systemd|launchd` オプションを指定すると、
-OS判定を上書きしてバックエンドを明示的に選択できます。
+利用不可ならcronにフォールバック。macOSはlaunchd。Windowsはタスクスケジューラ）に
+応じて選ばれたスケジューラ名（`# scheduler=cron` 等）と、実際に登録される内容
+（cronならcrontabに追記される行、systemdならunit/timerファイルの内容、launchdなら
+plistの内容、Windowsなら `Register-ScheduledTask` を実行するPowerShellスクリプト）
+が標準出力に表示されます。`--scheduler cron|systemd|launchd|windows` オプションを
+指定すると、OS判定を上書きしてバックエンドを明示的に選択できます。
 
 内容を確認したら、以下のコマンドで実際に登録します。
 
@@ -224,6 +226,14 @@ uv run news-digest --config config.yaml --db state/digest.db schedule install
 生成されます）を経由してバッチを起動するため、後述するcronのPATH問題は
 自動登録では緩和されます。また、`config.yaml` の `schedule.timezone` とOSの
 タイムゾーンが異なる場合は警告ログが出力されます。
+
+> **Windows（タスクスケジューラ）対応は実験的（best-effort）機能です。**
+> Windowsバックエンドは `#!/bin/bash` 前提のラッパースクリプトに依存せず、
+> `Register-ScheduledTask` で組み立てたタスクから `uv run news-digest ...` を
+> 直接呼び出す構成になっています。実際のWindows環境での動作検証はスコープ外
+> であり、コマンド構築レベルでのユニットテストに留まります。動作しない場合は
+> `schedule install` 失敗時に表示される手動設定手順、または後述の手動設定例を
+> 参考にしてください。
 
 登録状況の確認・登録解除は以下のコマンドで行います。
 
@@ -249,6 +259,18 @@ Claude Code CLIの認証がOSキーチェーンやログインセッションに
 認証情報への到達性が確保されやすくなります。`schedule install` のOS自動判定が
 Linuxでsystemdを優先しフォールバック時のみcronを使う設計になっているのは、
 この事情とも整合しています。
+
+Windowsでも同様の事情があり、`config.llm.provider` が `claude-code-cli` の
+場合はタスク登録時に自動的に `-LogonType Interactive` を付与し、対話ログオン
+セッションの文脈でタスクを実行させます（`claude`/`local-ai` のようなAPI系
+プロバイダーはAPIキー等の環境変数のみで完結するためこの制約は緩く、
+`-LogonType` を指定せず非対話ログオンでも動作しやすくなっています）。
+
+なお、Windowsのタイムゾーン検出はIANA名（`Asia/Tokyo` 等）ではなく
+タイムゾーン略称（`Tokyo Standard Time` 等）になることが多く、`config.yaml` の
+`schedule.timezone`（IANA名）と文字列一致しないため、タイムゾーン不一致の
+警告が出やすい点に注意してください。実害がない場合（意図した時刻に実行されて
+いることを確認できている場合）は無視して構いません。
 
 ## 自動登録が使えない場合の参考（手動crontab/systemd/launchd例）
 

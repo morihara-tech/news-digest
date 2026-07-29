@@ -6,6 +6,7 @@ from src.scheduler.detect import (
     BACKEND_CRON,
     BACKEND_LAUNCHD,
     BACKEND_SYSTEMD,
+    BACKEND_WINDOWS,
     detect_backend,
     is_systemd_user_instance_available,
 )
@@ -15,6 +16,7 @@ def test_detect_backend_with_override_returns_override():
     assert detect_backend("cron") == BACKEND_CRON
     assert detect_backend("systemd") == BACKEND_SYSTEMD
     assert detect_backend("launchd") == BACKEND_LAUNCHD
+    assert detect_backend("windows") == BACKEND_WINDOWS
 
 
 def test_detect_backend_with_invalid_override_raises():
@@ -43,8 +45,13 @@ def test_detect_backend_linux_without_systemd_falls_back_to_cron(monkeypatch):
     assert detect_backend(None) == BACKEND_CRON
 
 
-def test_detect_backend_unsupported_os_raises(monkeypatch):
+def test_detect_backend_windows_returns_windows(monkeypatch):
     monkeypatch.setattr("src.scheduler.detect.get_platform_system", lambda: "Windows")
+    assert detect_backend(None) == BACKEND_WINDOWS
+
+
+def test_detect_backend_unsupported_os_raises(monkeypatch):
+    monkeypatch.setattr("src.scheduler.detect.get_platform_system", lambda: "FreeBSD")
     with pytest.raises(ValueError):
         detect_backend(None)
 

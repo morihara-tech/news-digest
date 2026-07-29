@@ -23,9 +23,11 @@ MARKER_ID = "news-digest-scheduler"
 MARKER_COMMENT_BEGIN = f"# BEGIN {MARKER_ID} (auto-generated, do not edit)"
 MARKER_COMMENT_END = f"# END {MARKER_ID}"
 
-# systemd user unit名 / launchd label名（固定・冪等更新の対象）。
+# systemd user unit名 / launchd label名 / Windowsタスクスケジューラのタスク名
+# （固定・冪等更新の対象）。
 SYSTEMD_UNIT_NAME = "news-digest"
 LAUNCHD_LABEL = "tech.morihara.news-digest"
+WINDOWS_TASK_NAME = "news-digest-scheduler"
 
 # ラッパースクリプトの既定パス（リポジトリルートからの相対パス）。
 # state/ は .gitignore 対象であり、install時にランタイム生成する。

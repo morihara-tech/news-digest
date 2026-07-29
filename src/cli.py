@@ -29,12 +29,14 @@ from src.scheduler.detect import (
     BACKEND_CRON,
     BACKEND_LAUNCHD,
     BACKEND_SYSTEMD,
+    BACKEND_WINDOWS,
     SUPPORTED_BACKENDS,
     detect_backend,
 )
 from src.scheduler.launchd import LaunchdBackend
 from src.scheduler.manual import render_manual_instructions
 from src.scheduler.systemd import SystemdBackend
+from src.scheduler.windows import WindowsBackend
 
 load_dotenv()
 
@@ -90,7 +92,13 @@ def _repo_root() -> Path:
 
 
 def _build_backend(
-    backend_name: str, config: AppConfig, wrapper_script_path: Path
+    backend_name: str,
+    config: AppConfig,
+    wrapper_script_path: Path,
+    *,
+    repo_root: Path | None = None,
+    config_path: str | None = None,
+    db_path: str | None = None,
 ) -> SchedulerBackend:
     timezone = config.schedule.timezone
     times = config.schedule.times
@@ -100,6 +108,12 @@ def _build_backend(
         return SystemdBackend(timezone, times, wrapper_script_path)
     if backend_name == BACKEND_LAUNCHD:
         return LaunchdBackend(timezone, times, wrapper_script_path)
+    if backend_name == BACKEND_WINDOWS:
+        # Windowsはbashラッパースクリプトに依存せず、uv runを直接呼び出すため
+        # repo_root/config_path/db_pathが必要になる。
+        return WindowsBackend(
+            timezone, times, config.llm.provider, repo_root, config_path, db_path
+        )
     raise ValueError(f"未対応のスケジューラです: {backend_name}")
 
 
@@ -114,7 +128,14 @@ def cmd_schedule_install(args: argparse.Namespace) -> int:
     try:
         backend_name = detect_backend(args.scheduler)
         wrapper_script_path = write_wrapper_script(repo_root, args.config, args.db)
-        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend = _build_backend(
+            backend_name,
+            config,
+            wrapper_script_path,
+            repo_root=repo_root,
+            config_path=args.config,
+            db_path=args.db,
+        )
         backend.install()
     except Exception as exc:
         logger.error("スケジューラへの自動登録に失敗しました: %s", exc)
@@ -131,7 +152,14 @@ def cmd_schedule_uninstall(args: argparse.Namespace) -> int:
     try:
         backend_name = detect_backend(args.scheduler)
         wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
-        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend = _build_backend(
+            backend_name,
+            config,
+            wrapper_script_path,
+            repo_root=repo_root,
+            config_path=args.config,
+            db_path=args.db,
+        )
         backend.uninstall()
     except Exception as exc:
         logger.error("スケジューラ登録の削除に失敗しました: %s", exc)
@@ -145,7 +173,14 @@ def cmd_schedule_status(args: argparse.Namespace) -> int:
     try:
         backend_name = detect_backend(args.scheduler)
         wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
-        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend = _build_backend(
+            backend_name,
+            config,
+            wrapper_script_path,
+            repo_root=repo_root,
+            config_path=args.config,
+            db_path=args.db,
+        )
         installed = backend.status()
     except Exception as exc:
         logger.error("スケジューラ登録状況の確認に失敗しました: %s", exc)
@@ -161,7 +196,14 @@ def cmd_schedule_preview(args: argparse.Namespace) -> int:
     try:
         backend_name = detect_backend(args.scheduler)
         wrapper_script_path = repo_root / WRAPPER_SCRIPT_RELATIVE_PATH
-        backend = _build_backend(backend_name, config, wrapper_script_path)
+        backend = _build_backend(
+            backend_name,
+            config,
+            wrapper_script_path,
+            repo_root=repo_root,
+            config_path=args.config,
+            db_path=args.db,
+        )
     except Exception as exc:
         logger.error("プレビューの生成に失敗しました: %s", exc)
         return 1
