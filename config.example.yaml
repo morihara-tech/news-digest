@@ -58,6 +58,24 @@ filters:
                                 # 未指定（コメントアウトのまま）の場合は日付フィルタなし（後方互換）。
                                 # 発行日がパースできない記事は除外せず素通りする。
 
+# 重要度スコアリング（ダイジェスト内の並び替え・強調表示）
+scoring:
+  enabled: true                # false でスコアリング機能全体を無効化（既存の並び順のまま配信）
+  emphasis_threshold: 70.0      # このスコア以上の記事を強調表示する閾値
+  emphasis_marker: "⭐"          # 強調表示に使うマーカー
+  default_score: 50.0           # LLMスコア取得前・失敗時のフォールバック既定値（中央値）
+  score_min: 0.0                # スコアの下限（score_min < score_max が必須）
+  score_max: 100.0              # スコアの上限
+  feedback:
+    good_weight: 10.0           # 「good」フィードバック1件あたりの加点
+    bad_weight: 10.0            # 「bad」フィードバック1件あたりの減点
+    mute_penalty: 1000.0        # ミュート指定時の大幅減点（実質非表示化）
+    saturation_count: 5         # このフィードバック件数以降は加点/減点が頭打ちになる
+    max_total_delta: 40.0       # フィードバックによる補正量の合計上限（暴走防止）
+    mute_min_count: 1           # ミュート適用に必要な最小フィードバック件数
+    keywords: []                # フィードバック学習の対象キーワード（空=キーワード横断で学習）
+    lookback_days: null         # フィードバック集計の遡及期間（日数）。未指定は無期限
+
 # フィード一覧（例。実際に使うフィードに置き換えること）
 feeds:
   - name: "Publickey"

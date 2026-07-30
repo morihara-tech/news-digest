@@ -75,6 +75,36 @@ class FiltersConfig(BaseModel):
     max_age_days: int | None = None
 
 
+class ScoringFeedbackConfig(BaseModel):
+    good_weight: float = 10.0
+    bad_weight: float = 10.0
+    mute_penalty: float = 1000.0
+    saturation_count: int = 5
+    max_total_delta: float = 40.0
+    mute_min_count: int = 1
+    keywords: list[str] = Field(default_factory=list)
+    lookback_days: int | None = None
+
+
+class ScoringConfig(BaseModel):
+    enabled: bool = True
+    emphasis_threshold: float = 70.0
+    emphasis_marker: str = "⭐"
+    default_score: float = 50.0
+    score_min: float = 0.0
+    score_max: float = 100.0
+    feedback: ScoringFeedbackConfig = Field(default_factory=ScoringFeedbackConfig)
+
+    @model_validator(mode="after")
+    def _check_score_range(self) -> "ScoringConfig":
+        if self.score_min >= self.score_max:
+            raise ValueError(
+                "scoring: score_min は score_max より小さい必要があります "
+                f"(score_min={self.score_min}, score_max={self.score_max})"
+            )
+        return self
+
+
 class FeedConfig(BaseModel):
     name: str
     url: str
@@ -111,6 +141,7 @@ class AppConfig(BaseModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     delivery_policy: DeliveryPolicyConfig = Field(default_factory=DeliveryPolicyConfig)
     filters: FiltersConfig = Field(default_factory=FiltersConfig)
+    scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     feeds: list[FeedConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
