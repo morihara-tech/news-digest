@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS feedback (
     url TEXT NOT NULL,
     feedback_type TEXT NOT NULL,
     value TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    feed_name TEXT,
+    title TEXT
 );
 
 CREATE TABLE IF NOT EXISTS delivery_runs (
@@ -70,7 +72,29 @@ class StateStore:
 
     def _init_schema(self) -> None:
         self._conn.executescript(SCHEMA)
+        self._migrate_feedback_table()
         self._conn.commit()
+
+    def _migrate_feedback_table(self) -> None:
+        """既存の feedback テーブルに feed_name/title 列がなければ追加する。
+
+        複数回 _init_schema() を実行しても安全な冪等マイグレーション。
+        新規作成のテーブルには最初から列があるため何もしない。
+        """
+        columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(feedback)").fetchall()
+        }
+        if "feed_name" not in columns:
+            self._conn.execute("ALTER TABLE feedback ADD COLUMN feed_name TEXT")
+        if "title" not in columns:
+            self._conn.execute("ALTER TABLE feedback ADD COLUMN title TEXT")
+
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_feed_name ON feedback (feed_name)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback (created_at)"
+        )
 
     def close(self) -> None:
         self._conn.close()
@@ -137,12 +161,27 @@ class StateStore:
     # --- feedback --------------------------------------------------------
 
     def add_feedback(self, url: str, feedback_type: str, value: str | None = None) -> int:
+        """フィードバックを記録する。
+
+        feedback_type は前後空白を除去し小文字化して保存する（good/bad/mute想定だが、
+        それ以外の自由記述の値も引き続き許容する）。
+        seen_articles を url で引き feed_name/title をデノーマライズして保存する。
+        既読テーブルにヒットしない場合は両方 NULL のまま登録する。
+        """
+        normalized_type = feedback_type.strip().lower()
+
+        seen_row = self._conn.execute(
+            "SELECT feed_name, title FROM seen_articles WHERE url = ?", (url,)
+        ).fetchone()
+        feed_name = seen_row["feed_name"] if seen_row is not None else None
+        title = seen_row["title"] if seen_row is not None else None
+
         cur = self._conn.execute(
             """
-            INSERT INTO feedback (url, feedback_type, value, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO feedback (url, feedback_type, value, created_at, feed_name, title)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (url, feedback_type, value, _now_iso()),
+            (url, normalized_type, value, _now_iso(), feed_name, title),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -150,6 +189,25 @@ class StateStore:
     def get_feedback(self, limit: int = 100) -> list[sqlite3.Row]:
         return self._conn.execute(
             "SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    def get_feedback_context(self, lookback_days: int | None = None) -> list[sqlite3.Row]:
+        """feed_name/title/feedback_type/created_at を持つfeedback行を返す。
+
+        フィードバック学習（重要度スコアリング）の集計用データ取得API。
+        集計ロジックは含まない単なるSELECT。lookback_days指定時は
+        created_at がその日数以内の行のみを返す。
+        """
+        if lookback_days is None:
+            return self._conn.execute(
+                "SELECT feed_name, title, feedback_type, created_at FROM feedback"
+            ).fetchall()
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+        return self._conn.execute(
+            "SELECT feed_name, title, feedback_type, created_at FROM feedback "
+            "WHERE created_at >= ?",
+            (cutoff,),
         ).fetchall()
 
     # --- delivery_runs -----------------------------------------------------
