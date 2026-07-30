@@ -19,7 +19,9 @@ from src.core.delivery import DeliveryError, deliver_digest, resolve_delivery_ta
 from src.core.digest import build_digest, mark_cost_overflow, summarize_articles
 from src.core.feed_fetcher import fetch_all
 from src.core.dedup import filter_new_articles
+from src.core.feedback import compute_feedback_weights
 from src.core.models import Article
+from src.core.scoring import apply_scoring
 from src.core.state import StateStore
 from src.llm.base import LLMProvider
 
@@ -131,13 +133,21 @@ def run_digest(
         site_groups = _group_by_feed_name(global_digest.articles)
         site_results: list[SiteRunResult] = []
 
+        feedback_weights = (
+            compute_feedback_weights(store, config.scoring) if config.scoring.enabled else None
+        )
+
         for feed_name, site_articles in site_groups.items():
             try:
                 summarize_articles(site_articles, llm_provider)
+                if config.scoring.enabled:
+                    apply_scoring(site_articles, feedback_weights, config.scoring)
                 site_digest = build_digest(site_articles, config.digest)
 
                 try:
-                    delivered_targets = deliver_digest(targets, site_digest, site_label=feed_name)
+                    delivered_targets = deliver_digest(
+                        targets, site_digest, site_label=feed_name, scoring_config=config.scoring
+                    )
                 except DeliveryError as exc:
                     logger.error("サイト %s の配信に失敗しました: %s", feed_name, exc)
                     site_results.append(
