@@ -59,7 +59,7 @@ def run_digest_now() -> dict:
 
 @mcp.tool()
 def submit_feedback(url: str, feedback_type: str, value: str | None = None) -> dict:
-    """記事に対するフィードバック（例: good/bad, リアクション等）を記録する。"""
+    """記事に対するフィードバックを記録する。good/bad/mute（大文字小文字は無視）を受け付ける。"""
     with StateStore() as store:
         return record_feedback(store, url=url, feedback_type=feedback_type, value=value)
 
