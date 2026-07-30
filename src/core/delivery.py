@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from src.config import DeliveryTargetConfig, get_env
+from src.config import DeliveryTargetConfig, ScoringConfig, get_env
 from src.core.digest import DigestResult
 from src.core.models import Article
 
@@ -47,13 +47,30 @@ def resolve_delivery_targets(configs: list[DeliveryTargetConfig]) -> list[Delive
     return targets
 
 
-def _format_article_line(article: Article) -> str:
+def _emphasized_title(article: Article, scoring_config: ScoringConfig | None) -> str:
+    """強調対象記事のタイトルに絵文字マーカーを前置する。
+
+    scoring_config が未指定の場合は後方互換のため何も付与しない。
+    ミュート・degraded記事は article.emphasized が scoring.py 側で
+    既に False に倒れているため、ここでは article.emphasized をそのまま見るだけでよい。
+    """
+    if scoring_config is not None and article.emphasized:
+        return f"{scoring_config.emphasis_marker}{article.title}"
+    return article.title
+
+
+def _format_article_line(article: Article, scoring_config: ScoringConfig | None = None) -> str:
+    title = _emphasized_title(article, scoring_config)
     if article.degraded or not article.summary:
-        return f"* <{article.url}|{article.title}>"
-    return f"* <{article.url}|{article.title}>\n  {article.summary}"
+        return f"* <{article.url}|{title}>"
+    return f"* <{article.url}|{title}>\n  {article.summary}"
 
 
-def format_slack_payload(digest: DigestResult, site_label: str | None = None) -> dict:
+def format_slack_payload(
+    digest: DigestResult,
+    site_label: str | None = None,
+    scoring_config: ScoringConfig | None = None,
+) -> dict:
     if not digest.articles:
         return {"text": EMPTY_DIGEST_MESSAGE}
 
@@ -64,12 +81,16 @@ def format_slack_payload(digest: DigestResult, site_label: str | None = None) ->
     for group_name, articles in digest.groups.items():
         lines.append(f"*{group_name}*")
         for article in articles:
-            lines.append(_format_article_line(article))
+            lines.append(_format_article_line(article, scoring_config))
     text = "\n".join(lines)
     return {"text": text}
 
 
-def format_google_chat_payload(digest: DigestResult, site_label: str | None = None) -> dict:
+def format_google_chat_payload(
+    digest: DigestResult,
+    site_label: str | None = None,
+    scoring_config: ScoringConfig | None = None,
+) -> dict:
     if not digest.articles:
         return {"text": EMPTY_DIGEST_MESSAGE}
 
@@ -80,21 +101,27 @@ def format_google_chat_payload(digest: DigestResult, site_label: str | None = No
     for group_name, articles in digest.groups.items():
         lines.append(f"*{group_name}*")
         for article in articles:
+            title = _emphasized_title(article, scoring_config)
             if article.degraded or not article.summary:
-                lines.append(f"- {article.title}\n  {article.url}")
+                lines.append(f"- {title}\n  {article.url}")
             else:
-                lines.append(f"- {article.title}\n  {article.summary}\n  {article.url}")
+                lines.append(f"- {title}\n  {article.summary}\n  {article.url}")
     text = "\n".join(lines)
     return {"text": text}
 
 
 def build_payload(
-    target: DeliveryTarget, digest: DigestResult, site_label: str | None = None
+    target: DeliveryTarget,
+    digest: DigestResult,
+    site_label: str | None = None,
+    scoring_config: ScoringConfig | None = None,
 ) -> dict:
     if target.config.format == "slack":
-        return format_slack_payload(digest, site_label=site_label)
+        return format_slack_payload(digest, site_label=site_label, scoring_config=scoring_config)
     if target.config.format == "google_chat":
-        return format_google_chat_payload(digest, site_label=site_label)
+        return format_google_chat_payload(
+            digest, site_label=site_label, scoring_config=scoring_config
+        )
     raise ValueError(f"未知の配信フォーマットです: {target.config.format}")
 
 
@@ -107,7 +134,10 @@ def send_webhook(target: DeliveryTarget, payload: dict, timeout: float = 15.0) -
 
 
 def deliver_digest(
-    targets: list[DeliveryTarget], digest: DigestResult, site_label: str | None = None
+    targets: list[DeliveryTarget],
+    digest: DigestResult,
+    site_label: str | None = None,
+    scoring_config: ScoringConfig | None = None,
 ) -> list[str]:
     """全配信先に送信する。成功した配信先名のリストを返す。
 
@@ -116,11 +146,13 @@ def deliver_digest(
 
     site_label を指定すると、サイト（フィード）ごとの独立配信としてメッセージ
     本文の先頭にサイト名の見出しを付与する。
+    scoring_config を指定すると、article.emphasized な記事のタイトル前に
+    emphasis_marker を付与する（未指定・scoring.enabled=False時は付与しない）。
     """
     succeeded: list[str] = []
     errors: list[str] = []
     for target in targets:
-        payload = build_payload(target, digest, site_label=site_label)
+        payload = build_payload(target, digest, site_label=site_label, scoring_config=scoring_config)
         try:
             send_webhook(target, payload)
             succeeded.append(target.config.name)

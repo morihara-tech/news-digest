@@ -49,7 +49,9 @@ logger = logging.getLogger(__name__)
 def cmd_run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     with StateStore(args.db) as store:
-        llm_provider = create_llm_provider(config.llm)
+        llm_provider = create_llm_provider(
+            config.llm, request_importance_score=config.scoring.enabled
+        )
         result = run_digest(config, store, llm_provider)
 
     logger.info(

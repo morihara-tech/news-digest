@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from src.config import DeliveryTargetConfig
+from src.config import DeliveryTargetConfig, ScoringConfig
 from src.core.delivery import (
     DeliveryError,
     DeliveryTarget,
@@ -51,6 +51,95 @@ def test_format_google_chat_payload_empty_digest():
     digest = build_digest([], DigestConfig())
     payload = format_google_chat_payload(digest)
     assert "新着記事はありませんでした" in payload["text"]
+
+
+def _digest_with_articles(articles: list[Article]):
+    return build_digest(articles, DigestConfig(max_articles=10, group_by="feed"))
+
+
+def test_format_slack_payload_emphasized_article_has_marker_prefix():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.emphasized = True
+    digest = _digest_with_articles([article])
+    scoring_config = ScoringConfig()
+
+    payload = format_slack_payload(digest, scoring_config=scoring_config)
+    assert f"{scoring_config.emphasis_marker}Title A" in payload["text"]
+
+
+def test_format_slack_payload_non_emphasized_article_has_no_marker():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.emphasized = False
+    digest = _digest_with_articles([article])
+    scoring_config = ScoringConfig()
+
+    payload = format_slack_payload(digest, scoring_config=scoring_config)
+    assert scoring_config.emphasis_marker not in payload["text"]
+    assert "Title A" in payload["text"]
+
+
+def test_format_slack_payload_without_scoring_config_never_emphasizes():
+    """scoring_config未指定の場合(後方互換)は、emphasized=Trueでもマークを付与しない。"""
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.emphasized = True
+    digest = _digest_with_articles([article])
+
+    payload = format_slack_payload(digest)
+    assert "⭐" not in payload["text"]
+    assert "Title A" in payload["text"]
+
+
+def test_format_slack_payload_muted_or_degraded_article_kept_and_not_emphasized():
+    """ミュート・degraded記事はemphasized=False固定(scoring.py側の責務)であり、
+    delivery層はarticle.emphasizedをそのまま見るだけでタイトル+リンクは維持される。"""
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.degraded = True
+    article.emphasized = False
+    digest = _digest_with_articles([article])
+    scoring_config = ScoringConfig()
+
+    payload = format_slack_payload(digest, scoring_config=scoring_config)
+    assert scoring_config.emphasis_marker not in payload["text"]
+    assert "Title A" in payload["text"]
+    assert "https://example.com/a" in payload["text"]
+
+
+def test_format_google_chat_payload_emphasized_article_has_marker_prefix():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.emphasized = True
+    digest = _digest_with_articles([article])
+    scoring_config = ScoringConfig()
+
+    payload = format_google_chat_payload(digest, scoring_config=scoring_config)
+    assert f"{scoring_config.emphasis_marker}Title A" in payload["text"]
+
+
+def test_format_google_chat_payload_without_scoring_config_never_emphasizes():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.emphasized = True
+    digest = _digest_with_articles([article])
+
+    payload = format_google_chat_payload(digest)
+    assert "⭐" not in payload["text"]
+    assert "Title A" in payload["text"]
+
+
+def test_format_google_chat_payload_degraded_article_kept_with_title_and_link():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.degraded = True
+    article.emphasized = False
+    digest = _digest_with_articles([article])
+    scoring_config = ScoringConfig()
+
+    payload = format_google_chat_payload(digest, scoring_config=scoring_config)
+    assert "Title A" in payload["text"]
+    assert "https://example.com/a" in payload["text"]
+    assert scoring_config.emphasis_marker not in payload["text"]
 
 
 def test_resolve_delivery_targets_reads_env(monkeypatch):
