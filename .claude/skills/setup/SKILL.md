@@ -5,6 +5,6 @@ description: news-digestのセットアップ（.env/config.yaml生成・依存�
 
 # news-digest セットアップ代行
 
-このリポジトリのセットアップ手順は `.agent/skills/setup.md` に記載されています。
+このリポジトリのセットアップ手順は `.agents/skills/setup/SKILL.md` に記載されています。
 そのファイルの内容を読み込み、記載されている手順に従ってユーザーとの対話・
 セットアップ代行を行ってください。
