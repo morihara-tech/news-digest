@@ -7,6 +7,7 @@ import pytest
 
 from src.config import ClaudeCodeCliConfig, LLMConfig
 from src.core.models import Article
+from src.llm.base import SummaryResult
 from src.llm.claude_code_cli_provider import (
     ClaudeCodeCliProvider,
     ClaudeCodeCliResponseError,
@@ -61,7 +62,10 @@ def test_summarize_batch_two_stage_json_parse_success(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     results = provider.summarize_batch(_articles())
-    assert results == {"https://example.com/a": "要約A", "https://example.com/b": "要約B"}
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=None),
+        "https://example.com/b": SummaryResult(summary="要約B", importance_score=None),
+    }
 
 
 def test_summarize_batch_handles_markdown_fenced_json(monkeypatch):
@@ -73,7 +77,9 @@ def test_summarize_batch_handles_markdown_fenced_json(monkeypatch):
         subprocess, "run", lambda *a, **k: FakeCompletedProcess(stdout=top_level)
     )
     results = provider.summarize_batch([_articles()[0]])
-    assert results == {"https://example.com/a": "要約A"}
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=None)
+    }
 
 
 def test_summarize_batch_retries_on_timeout_then_succeeds(monkeypatch):
@@ -92,7 +98,7 @@ def test_summarize_batch_retries_on_timeout_then_succeeds(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     results = provider.summarize_batch(_articles())
     assert calls["count"] == 2
-    assert results["https://example.com/a"] == "要約A"
+    assert results["https://example.com/a"] == SummaryResult(summary="要約A", importance_score=None)
 
 
 def test_summarize_batch_raises_after_exhausting_retries(monkeypatch):
@@ -129,3 +135,73 @@ def test_summarize_batch_raises_on_nonzero_exit_code(monkeypatch):
 def test_summarize_batch_empty_articles_returns_empty_dict():
     provider = ClaudeCodeCliProvider(_config())
     assert provider.summarize_batch([]) == {}
+
+
+def test_summarize_batch_with_score_request_parses_new_format(monkeypatch):
+    """request_importance_score=True の場合、新形式 {url: {"summary":..., "score":...}} をパースする。"""
+    provider = ClaudeCodeCliProvider(_config(), request_importance_score=True)
+    inner = json.dumps(
+        {
+            "https://example.com/a": {"summary": "要約A", "score": 80},
+            "https://example.com/b": {"summary": "要約B", "score": 42.5},
+        },
+        ensure_ascii=False,
+    )
+    top_level = json.dumps({"result": inner}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: FakeCompletedProcess(stdout=top_level)
+    )
+    results = provider.summarize_batch(_articles())
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=80.0),
+        "https://example.com/b": SummaryResult(summary="要約B", importance_score=42.5),
+    }
+
+
+def test_summarize_batch_with_score_request_missing_score_key_falls_back_to_none(monkeypatch):
+    """新形式の辞書でも score キーが欠落していれば importance_score=None にフォールバックする。"""
+    provider = ClaudeCodeCliProvider(_config(), request_importance_score=True)
+    inner = json.dumps({"https://example.com/a": {"summary": "要約A"}}, ensure_ascii=False)
+    top_level = json.dumps({"result": inner}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: FakeCompletedProcess(stdout=top_level)
+    )
+    results = provider.summarize_batch([_articles()[0]])
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=None)
+    }
+
+
+def test_summarize_batch_with_score_request_unparseable_score_falls_back_to_none(monkeypatch):
+    """score が数値変換できない場合も importance_score=None にフォールバックする。"""
+    provider = ClaudeCodeCliProvider(_config(), request_importance_score=True)
+    inner = json.dumps(
+        {"https://example.com/a": {"summary": "要約A", "score": "very important"}},
+        ensure_ascii=False,
+    )
+    top_level = json.dumps({"result": inner}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: FakeCompletedProcess(stdout=top_level)
+    )
+    results = provider.summarize_batch([_articles()[0]])
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=None)
+    }
+
+
+def test_summarize_batch_backward_compat_old_string_format(monkeypatch):
+    """旧形式 {url: "要約文字列"} の応答は SummaryResult(summary=..., importance_score=None) として扱われる。"""
+    provider = ClaudeCodeCliProvider(_config(), request_importance_score=True)
+    inner = json.dumps({"https://example.com/a": "要約A"}, ensure_ascii=False)
+    top_level = json.dumps({"result": inner}, ensure_ascii=False)
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: FakeCompletedProcess(stdout=top_level)
+    )
+    results = provider.summarize_batch([_articles()[0]])
+    assert results == {
+        "https://example.com/a": SummaryResult(summary="要約A", importance_score=None)
+    }
