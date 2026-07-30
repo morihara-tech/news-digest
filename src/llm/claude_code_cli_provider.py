@@ -15,7 +15,7 @@ import subprocess
 
 from src.config import LLMConfig
 from src.core.models import Article
-from src.llm.base import LLMProvider
+from src.llm.base import LLMProvider, SummaryResult, coerce_score
 
 
 class ClaudeCodeCliResponseError(ValueError):
@@ -52,7 +52,7 @@ def _extract_json_object(text: str) -> str:
 
 
 class ClaudeCodeCliProvider(LLMProvider):
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, request_importance_score: bool = False):
         cli_config = config.claude_code_cli
         self._command = cli_config.command
         self._model = cli_config.model
@@ -61,17 +61,18 @@ class ClaudeCodeCliProvider(LLMProvider):
         self._max_input_chars = config.max_input_chars
         self._language = config.summary_language
         self._style = config.summary_style
+        self._request_importance_score = request_importance_score
 
     # --- LLMProvider interface -------------------------------------------------
 
-    def summarize(self, article: Article) -> str:
+    def summarize(self, article: Article) -> SummaryResult:
         results = self.summarize_batch([article])
         url = article.normalized_url()
         if url not in results:
             raise RuntimeError(f"記事の要約に失敗しました: {url}")
         return results[url]
 
-    def summarize_batch(self, articles: list[Article]) -> dict[str, str]:
+    def summarize_batch(self, articles: list[Article]) -> dict[str, SummaryResult]:
         """1日分の記事をまとめてサブプロセス1回で要約する。
 
         タイムアウト・失敗時は max_retries 回まで再試行する。
@@ -109,6 +110,16 @@ class ClaudeCodeCliProvider(LLMProvider):
             for article in articles
         ]
         articles_json = json.dumps(payload, ensure_ascii=False)
+        if self._request_importance_score:
+            return (
+                "あなたはニュース要約アシスタントです。"
+                f"以下のJSON配列で渡す各ニュース記事を{self._language}で要約し、"
+                f"あわせて重要度を0〜100の数値で評価してください。スタイル: {self._style}\n"
+                "出力は、各記事のurlをキー、"
+                '{"summary": "要約文字列", "score": <0-100の数値>} を値にした'
+                "JSONオブジェクトのみを返してください。説明文やコードフェンスは含めないでください。\n\n"
+                f"記事一覧: {articles_json}"
+            )
         return (
             "あなたはニュース要約アシスタントです。"
             f"以下のJSON配列で渡す各ニュース記事を{self._language}で要約してください。"
@@ -144,13 +155,19 @@ class ClaudeCodeCliProvider(LLMProvider):
             )
         return result.stdout
 
-    def _parse_response(self, stdout: str) -> dict[str, str]:
+    def _parse_response(self, stdout: str) -> dict[str, SummaryResult]:
         """2段階JSONパース。
 
         1段階目: CLI標準出力全体をトップレベルJSONとしてパースする
         （print modeのJSON出力形式、例: {"result": "...model output text..."}）。
-        2段階目: 1段階目で得られたテキストから、期待する {url: summary} 形式の
+        2段階目: 1段階目で得られたテキストから、期待する {url: ...} 形式の
         JSONを抽出・パースする。
+
+        {url: ...} の各値は以下のいずれかを後方互換で受け付ける:
+        - 新形式: {"summary": "...", "score": <0-100>} という辞書
+        - 旧形式: 要約文字列そのもの
+        いずれの場合も score が欠落・パース不能なら importance_score=None にフォールバックする
+        （JSON自体が壊れている等、応答全体のパース失敗は従来通り例外を送出する）。
         """
         stripped = stdout.strip()
         try:
@@ -165,20 +182,38 @@ class ClaudeCodeCliProvider(LLMProvider):
         elif isinstance(top_level, str):
             text = top_level
         elif isinstance(top_level, dict):
-            # すでに {url: summary} 形式で返ってきた場合はそのまま使う。
-            return {str(k): str(v) for k, v in top_level.items()}
+            # すでに {url: ...} 形式で返ってきた場合はそのまま使う。
+            return {str(k): self._coerce_entry(v) for k, v in top_level.items()}
         else:
             raise ClaudeCodeCliResponseError("予期しないトップレベルJSON構造です")
 
         json_text = _extract_json_object(text)
         try:
-            summaries = json.loads(json_text)
+            entries = json.loads(json_text)
         except json.JSONDecodeError as exc:
             raise ClaudeCodeCliResponseError(
                 f"応答テキストから抽出したJSONのパースに失敗しました: {exc}"
             ) from exc
 
-        if not isinstance(summaries, dict):
+        if not isinstance(entries, dict):
             raise ClaudeCodeCliResponseError("要約結果がJSONオブジェクトではありません")
 
-        return {str(k): str(v) for k, v in summaries.items()}
+        return {str(k): self._coerce_entry(v) for k, v in entries.items()}
+
+    @staticmethod
+    def _coerce_entry(value: object) -> SummaryResult:
+        """{url: ...} の1エントリを SummaryResult に変換する後方互換ヘルパー。
+
+        新形式（{"summary": ..., "score": ...} 辞書）・旧形式（文字列）の
+        両方を受け付ける。score欠落・数値変換不能時はimportance_score=Noneにする。
+        """
+        if isinstance(value, dict):
+            summary_value = value.get("summary")
+            summary = (
+                summary_value
+                if isinstance(summary_value, str) and summary_value
+                else json.dumps(value, ensure_ascii=False)
+            )
+            score = coerce_score(value.get("score"))
+            return SummaryResult(summary=summary, importance_score=score)
+        return SummaryResult(summary=str(value), importance_score=None)
