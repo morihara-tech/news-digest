@@ -20,6 +20,9 @@ class Article:
     summary: str | None = None  # LLMによる要約結果（未設定なら縮退配信）
     degraded: bool = False  # True の場合、要約なしで縮退配信する
     degraded_reason: str | None = None
+    llm_importance_score: float | None = None  # digest層が設定するLLM生スコア（後続タスクで使用）
+    importance_score: float | None = None      # scoring層が設定する最終スコア（delivery/sortが参照。後続タスクで使用）
+    emphasized: bool = False                    # scoring層が確定する強調フラグ（後続タスクで使用）
 
     def normalized_url(self) -> str:
         """URLの正規化。最低限そのまま文字列で一意化するが、
