@@ -18,6 +18,36 @@ def test_summarize_articles_success():
     assert all(not a.degraded for a in articles)
 
 
+def test_summarize_articles_propagates_importance_score():
+    """SummaryResult.importance_score が article.llm_importance_score に展開されること
+    (SummaryResultオブジェクトをそのままarticle.summaryに代入しないこと)。"""
+    articles = [_article("https://example.com/a"), _article("https://example.com/b")]
+    provider = MockLLMProvider(
+        scores={"https://example.com/a": 85.0, "https://example.com/b": 20.0}
+    )
+    summarize_articles(articles, provider)
+
+    by_url = {a.url: a for a in articles}
+    a = by_url["https://example.com/a"]
+    b = by_url["https://example.com/b"]
+    assert isinstance(a.summary, str)
+    assert a.llm_importance_score == 85.0
+    assert isinstance(b.summary, str)
+    assert b.llm_importance_score == 20.0
+
+
+def test_summarize_articles_missing_score_leaves_llm_importance_score_none():
+    """要約は成功したがscoreが欠落した場合、degraded扱いにはせず
+    llm_importance_scoreはNoneのまま(scoring.pyがdefault_scoreを適用する)。"""
+    articles = [_article("https://example.com/a")]
+    provider = MockLLMProvider()  # scores未指定 = importance_score常にNone
+    summarize_articles(articles, provider)
+
+    assert articles[0].degraded is False
+    assert articles[0].summary is not None
+    assert articles[0].llm_importance_score is None
+
+
 def test_summarize_articles_degrades_on_failure():
     articles = [_article("https://example.com/a"), _article("https://example.com/b")]
     provider = MockLLMProvider(fail_urls={"https://example.com/a"})
@@ -27,6 +57,7 @@ def test_summarize_articles_degrades_on_failure():
     ok = [a for a in articles if a.url == "https://example.com/b"][0]
     assert failed.degraded is True
     assert failed.summary is None
+    assert failed.llm_importance_score is None
     assert ok.degraded is False
     assert ok.summary is not None
 

@@ -55,7 +55,9 @@ def summarize_articles(articles: list[Article], provider: LLMProvider) -> list[A
     for article in to_summarize:
         key = article.normalized_url()
         if key in results and results[key]:
-            article.summary = results[key]
+            result = results[key]
+            article.summary = result.summary
+            article.llm_importance_score = result.importance_score
         else:
             article.degraded = True
             article.degraded_reason = "summarize_failed"
