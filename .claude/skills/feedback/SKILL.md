@@ -5,6 +5,6 @@ description: news-digestで配信された記事に対するフィードバッ�
 
 # news-digest フィードバック記録代行
 
-このリポジトリのフィードバック記録手順は `.agent/skills/feedback.md` に
+このリポジトリのフィードバック記録手順は `.agents/skills/feedback/SKILL.md` に
 記載されています。そのファイルの内容を読み込み、記載されている手順に従って
 URLの解決とフィードバックの記録を代行してください。
