@@ -1,3 +1,8 @@
+---
+name: scraper
+description: news-digestのscraper方式（RSS/Atomを提供しないサイト向け）のスクレイパーを生成・修正するスキル。RSS/Atomのない新しいサイトへの対応を依頼されたとき（生成モード）、または `uv run news-digest --db state/digest.db scrapers check` でスクレイパーの壊れ（status: error/empty）を検知し修正を依頼されたとき（修正モード）に起動する。
+---
+
 # news-digest スクレイパー生成・修正代行手順
 
 あなた（AIコーディングエージェント）は、このドキュメントに従ってユーザーと対話しながら
