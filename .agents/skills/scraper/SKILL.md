@@ -56,9 +56,11 @@ news-digestの「scraper方式」（RSS/Atomフィードを提供していない
    実行した場合に返るべき期待値を手動で検証して記載する
    （`scrapers/example-blog/expected.json` の形式に倣う）。
 6. 下記「契約チェックリスト」で自己検証する。
-7. `config.yaml` への設定例（`source_type: scraper` + `scraper_id: {id}`）を
-   ユーザーに案内する。
-8. `scrapers/{id}/` は `.gitignore` 対象のローカルファイルであり、コミットや
+7. `config.yaml`（`config.example.yaml` ではなく実運用ファイル）の `feeds` に
+   `source_type: scraper` + `scraper_id: {id}` のエントリを実際に追記する。
+   カテゴリ等の値はユーザーに確認して埋める。
+8. テスト送信を行う（下記「テスト送信」を参照）。
+9. `scrapers/{id}/` は `.gitignore` 対象のローカルファイルであり、コミットや
    PR作成は行わない旨をユーザーに案内する。
 
 ## 修正（repair）モード
@@ -81,8 +83,29 @@ news-digestの「scraper方式」（RSS/Atomフィードを提供していない
 5. `scrapers/{id}/sample.html` を新しい構造のfixtureに更新し、`expected.json` も
    新しい期待値に更新する。
 6. 下記「契約チェックリスト」で自己検証する。
-7. `scrapers/{id}/` は `.gitignore` 対象のローカルファイルであり、コミットや
+7. テスト送信を行う（下記「テスト送信」を参照）。
+8. `scrapers/{id}/` は `.gitignore` 対象のローカルファイルであり、コミットや
    PR作成は行わない旨をユーザーに案内する。
+
+## テスト送信（両モード共通）
+
+`sample.html` に対する `fetch()` の自己検証はオフラインの契約確認に過ぎず、
+対象サイトへの実際のアクセス・要約・配信までは検証していない。生成・修正の
+最後に、実際のパイプラインを1回走らせて疎通を確認すること。
+
+1. **実行前に必ずユーザーに確認する。** `uv run news-digest --db state/digest.db run`
+   は `config.yaml` の `delivery` に設定された実際の配信先（Slack/Google Chat等の
+   webhook）に本番配信される。テスト目的でも実際のチャンネルに通知が届くことを
+   ユーザーに伝え、実行してよいか確認してから進める。
+2. 承認を得たら `uv run news-digest --db state/digest.db run` を実行する
+   （このコマンドはconfig.yamlの全フィードを対象に1回分のバッチを実行する。
+   対象スクレイパーのみを分離実行する手段は現状ないため、他フィードの新着も
+   同時に配信される点をユーザーに伝えておく）。
+3. `uv run news-digest --db state/digest.db scrapers check` で対象 `scraper_id` の
+   `status` が `ok` であることを確認する。`error`/`empty` の場合は原因を調査し、
+   必要であれば修正（repair）モードの手順に戻る。
+4. 配信先に実際に通知が届いたか（記事が縮退配信ではなく要約付きで届いているか
+   等）をユーザーに確認してもらう。
 
 ## 契約チェックリスト（両モード共通）
 
@@ -95,5 +118,8 @@ news-digestの「scraper方式」（RSS/Atomフィードを提供していない
 - [ ] `sample.html` に対して実際に `fetch()` 相当の処理を動かし、`expected.json`
       と一致することを手動で確認したか（可能であれば `tests/test_scraper_fetcher.py`
       のテストパターンを参考に、簡単なPythonスクリプトで検証することを推奨する）
+- [ ] `config.yaml`（実運用ファイル）にfeedエントリを実際に追記したか
+- [ ] 実配信先へ本番配信されることをユーザーに確認したうえでテスト送信を行い、
+      `scrapers check` の `status` が `ok` であることを確認したか
 - [ ] `scrapers/{id}/` はコミット・PR作成をせず、ローカルファイルとしてユーザーに
       直接提示したか
