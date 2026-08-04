@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.config import DigestConfig
 from src.core.digest import build_digest, mark_cost_overflow, summarize_articles
 from src.core.models import Article
@@ -119,3 +121,50 @@ def test_build_digest_groups_by_feed():
     assert set(result.groups.keys()) == {"Feed A", "Feed B"}
     assert len(result.groups["Feed A"]) == 2
     assert len(result.groups["Feed B"]) == 1
+
+
+def test_build_digest_groups_by_importance_splits_into_two_tiers():
+    """emphasized記事が「⭐ 注目記事」、残りが「その他の記事（新しい順）」に分かれる。
+    注目記事の順序は入力順（スコア降順）維持、その他はpublished_parsed降順。"""
+    emphasized_a = _article("https://example.com/emphasized-a")
+    emphasized_a.emphasized = True
+    emphasized_b = _article("https://example.com/emphasized-b")
+    emphasized_b.emphasized = True
+
+    old_other = _article("https://example.com/old")
+    old_other.published_parsed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    new_other = _article("https://example.com/new")
+    new_other.published_parsed = datetime(2026, 1, 5, tzinfo=timezone.utc)
+    undated_other = _article("https://example.com/undated")
+    undated_other.published_parsed = None
+
+    # 入力順: emphasized_a, emphasized_b が先頭（スコア降順を模す）
+    articles = [emphasized_a, emphasized_b, old_other, undated_other, new_other]
+    digest_config = DigestConfig(max_articles=10, group_by="importance")
+    result = build_digest(articles, digest_config)
+
+    assert set(result.groups.keys()) == {"⭐ 注目記事", "その他の記事（新しい順）"}
+    assert [a.url for a in result.groups["⭐ 注目記事"]] == [
+        "https://example.com/emphasized-a",
+        "https://example.com/emphasized-b",
+    ]
+    assert [a.url for a in result.groups["その他の記事（新しい順）"]] == [
+        "https://example.com/new",
+        "https://example.com/old",
+        "https://example.com/undated",
+    ]
+    # DigestResult.articlesはlimitedそのまま（順序変更しない）
+    assert result.articles == articles
+
+
+def test_build_digest_groups_by_importance_falls_back_to_single_group_when_no_emphasized():
+    """注目記事が0件の場合は2ティアに分けず、group_by=noneと同じ単一グループにフォールバックする。"""
+    articles = [
+        _article("https://example.com/a"),
+        _article("https://example.com/b"),
+    ]
+    digest_config = DigestConfig(max_articles=10, group_by="importance")
+    result = build_digest(articles, digest_config)
+
+    assert set(result.groups.keys()) == {"articles"}
+    assert len(result.groups["articles"]) == 2

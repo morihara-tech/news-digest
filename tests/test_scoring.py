@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.config import ScoringConfig, ScoringFeedbackConfig
 from src.core.feedback import FeedbackWeights
 from src.core.models import Article
@@ -184,3 +186,65 @@ def test_apply_scoring_delta_clamped_negative_side():
 
     # delta = -100 -> clamp(-40,40) = -40 -> score = clamp(50-40,0,100) = 10
     assert articles[0].importance_score == 10.0
+
+
+def test_apply_scoring_tiebreaks_same_score_by_published_date_descending():
+    """同スコアの場合は発行日が新しい記事を先にする。"""
+    older = _article("https://example.com/older", "Older", "feed", 50.0)
+    older.published_parsed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer = _article("https://example.com/newer", "Newer", "feed", 50.0)
+    newer.published_parsed = datetime(2026, 1, 3, tzinfo=timezone.utc)
+    middle = _article("https://example.com/middle", "Middle", "feed", 50.0)
+    middle.published_parsed = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+    articles = [older, newer, middle]
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert [a.url for a in articles] == [
+        "https://example.com/newer",
+        "https://example.com/middle",
+        "https://example.com/older",
+    ]
+
+
+def test_apply_scoring_tiebreaks_undated_article_last_within_same_score():
+    """published_parsed が None の記事は同スコア内で最後尾に回る。"""
+    dated = _article("https://example.com/dated", "Dated", "feed", 50.0)
+    dated.published_parsed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    undated = _article("https://example.com/undated", "Undated", "feed", 50.0)
+    undated.published_parsed = None
+
+    articles = [undated, dated]
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert [a.url for a in articles] == [
+        "https://example.com/dated",
+        "https://example.com/undated",
+    ]
+
+
+def test_apply_scoring_tiebreaks_all_undated_does_not_raise():
+    """published_parsedが全記事Noneでもtz-aware番兵によりTypeErrorにならない。"""
+    a = _article("https://example.com/a", "A", "feed", 50.0)
+    b = _article("https://example.com/b", "B", "feed", 50.0)
+    articles = [a, b]
+
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert len(articles) == 2
+
+
+def test_apply_scoring_tiebreaks_mixed_tz_and_none_across_different_scores():
+    """スコアが異なる場合はスコアが優先され、日付タイブレークが上位互換にならない。"""
+    high_score_undated = _article("https://example.com/high", "High", "feed", 90.0)
+    high_score_undated.published_parsed = None
+    low_score_dated = _article("https://example.com/low", "Low", "feed", 10.0)
+    low_score_dated.published_parsed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    articles = [low_score_dated, high_score_undated]
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert [a.url for a in articles] == [
+        "https://example.com/high",
+        "https://example.com/low",
+    ]

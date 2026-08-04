@@ -56,7 +56,7 @@ class ScheduleConfig(BaseModel):
 
 class DigestConfig(BaseModel):
     max_articles: int = 20
-    group_by: Literal["feed", "category", "none"] = "feed"
+    group_by: Literal["feed", "category", "none", "importance"] = "feed"
 
 
 class RetentionConfig(BaseModel):
