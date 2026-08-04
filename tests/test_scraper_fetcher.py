@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.config import FeedConfig
@@ -57,13 +58,42 @@ def test_fetch_via_scraper_success_matches_expected_json(tmp_path):
             assert article.published_at == record["published_at"]
             assert article.feed_name == "Example Blog"
             assert article.category == "tech"
-            assert article.published_parsed is None
+            assert article.published_parsed == datetime.fromisoformat(
+                record["published_at"]
+            ).astimezone(timezone.utc)
 
         rows = store.get_latest_source_health()
         assert len(rows) == 1
         assert rows[0]["scraper_id"] == "example-blog"
         assert rows[0]["status"] == "ok"
         assert rows[0]["article_count"] == len(expected)
+
+
+def test_fetch_via_scraper_parses_iso_published_at_and_falls_back_to_none(tmp_path):
+    scrapers_dir = tmp_path / "scrapers"
+    _write_dummy_scraper(
+        scrapers_dir,
+        "mixed-dates",
+        "def fetch(options, http):\n"
+        "    return [\n"
+        '        {"url": "https://example.com/a", "title": "ISO日付", "published_at": "2026-04-03"},\n'
+        '        {"url": "https://example.com/b", "title": "パース不能な日付", "published_at": "2026年4月3日"},\n'
+        "    ]\n",
+    )
+
+    feed = FeedConfig(
+        name="Mixed Dates",
+        url="https://example.com/mixed",
+        source_type="scraper",
+        scraper_id="mixed-dates",
+    )
+
+    with StateStore(tmp_path / "digest.db") as store:
+        articles = fetch_via_scraper(
+            feed, store=store, scrapers_dir=scrapers_dir, http_client=FakeHttpClient("<html></html>")
+        )
+        assert articles[0].published_parsed == datetime(2026, 4, 3, tzinfo=timezone.utc)
+        assert articles[1].published_parsed is None
 
 
 def _write_dummy_scraper(scrapers_dir: Path, scraper_id: str, body: str) -> None:

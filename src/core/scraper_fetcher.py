@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 
@@ -23,6 +24,23 @@ from src.core.state import StateStore
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCRAPERS_DIR = Path("scrapers")
+
+
+def _parse_published_at(published_at: str | None) -> datetime | None:
+    """published_at（ISO 8601想定の生文字列）をUTC awareなdatetimeへのベストエフォート変換。
+
+    スクレイパーが返す日付表記はサイトごとにまちまちなため、ISO 8601形式として
+    解釈できない場合は例外を投げず None を返す（既存の安全側スルー仕様を維持）。
+    """
+    if not published_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(published_at)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 class ScraperContractError(RuntimeError):
@@ -66,11 +84,14 @@ def _validate_records(records: object) -> list[dict]:
 def _records_to_articles(records: list[dict], feed: FeedConfig) -> list[Article]:
     """list[dict] -> Article への変換。
 
-    スクレイパー契約は日付の生文字列のみを返すためpublished_parsedは常にNoneとする。
-    日付フィルタ側は published_parsed is None を安全側で素通りする既存仕様に委ねる。
+    スクレイパー契約は日付の生文字列のみを返す。ISO 8601形式として解釈できれば
+    published_parsedに変換し、RSS/Atomと同じ日付フィルタ（max_age_days）を
+    適用できるようにする。解釈できない表記は既存どおりNoneとし、
+    日付フィルタ側の「published_parsed is None は安全側で素通り」仕様に委ねる。
     """
     articles: list[Article] = []
     for record in records:
+        published_at = record.get("published_at")
         articles.append(
             Article(
                 url=record["url"],
@@ -78,8 +99,8 @@ def _records_to_articles(records: list[dict], feed: FeedConfig) -> list[Article]
                 feed_name=feed.name,
                 category=record.get("category", feed.category),
                 summary_source=record.get("summary_source", ""),
-                published_at=record.get("published_at"),
-                published_parsed=None,
+                published_at=published_at,
+                published_parsed=_parse_published_at(published_at),
             )
         )
     return articles
