@@ -6,6 +6,10 @@ config.yaml
 state/
 *.db
 
+# ローカルでカスタマイズするscraper方式の実装（各自の環境固有のため非公開、テンプレートのみ公開）
+scrapers/*
+!scrapers/example-blog/
+
 # python
 __pycache__/
 *.pyc
