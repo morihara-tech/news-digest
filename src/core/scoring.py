@@ -6,14 +6,20 @@
 - ミュート対象（フィード or キーワード）は大きなペナルティを与えることで
   実質的に末尾へ追いやるが、記事自体は配信対象から除外しない
   （縮退配信と同様、「消さずに下げる」設計）。
-- 最終的に articles をスコア降順で安定ソートする。
+- 最終的に articles をスコア降順で安定ソートする。スコアが同点の場合は
+  発行日（published_parsed）降順（新しい記事が先）でタイブレークする。
+  発行日がパース不能（None）な記事は同点グループ内で最後尾に回す。
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.config import ScoringConfig
 from src.core.feedback import FeedbackWeights
 from src.core.models import Article
+
+_MIN_DATETIME = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
@@ -53,4 +59,7 @@ def apply_scoring(
         article.importance_score = score
         article.emphasized = (not muted) and score >= scoring_config.emphasis_threshold
 
-    articles.sort(key=lambda a: a.importance_score, reverse=True)
+    articles.sort(
+        key=lambda a: (a.importance_score, a.published_parsed or _MIN_DATETIME),
+        reverse=True,
+    )

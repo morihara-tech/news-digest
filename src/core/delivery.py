@@ -59,6 +59,13 @@ def _emphasized_title(article: Article, scoring_config: ScoringConfig | None) ->
     return article.title
 
 
+def _group_heading(group_name: str, scoring_config: ScoringConfig | None) -> str:
+    """グループ見出し。scoring有効時は「重要度順」であることを明示する。"""
+    if scoring_config is not None and scoring_config.enabled:
+        return f"{group_name}（重要度順）"
+    return group_name
+
+
 def _format_article_line(article: Article, scoring_config: ScoringConfig | None = None) -> str:
     title = _emphasized_title(article, scoring_config)
     if article.degraded or not article.summary:
@@ -79,7 +86,7 @@ def format_slack_payload(
         lines.append(f"📰 *{site_label}*")
         lines.append("---")
     for group_name, articles in digest.groups.items():
-        lines.append(f"*{group_name}*")
+        lines.append(f"*{_group_heading(group_name, scoring_config)}*")
         for article in articles:
             lines.append(_format_article_line(article, scoring_config))
     text = "\n".join(lines)
@@ -99,7 +106,7 @@ def format_google_chat_payload(
         lines.append(f"📰 {site_label}")
         lines.append("---")
     for group_name, articles in digest.groups.items():
-        lines.append(f"*{group_name}*")
+        lines.append(f"*{_group_heading(group_name, scoring_config)}*")
         for article in articles:
             title = _emphasized_title(article, scoring_config)
             if article.degraded or not article.summary:

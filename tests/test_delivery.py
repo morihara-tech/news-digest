@@ -68,6 +68,32 @@ def test_format_slack_payload_emphasized_article_has_marker_prefix():
     assert f"{scoring_config.emphasis_marker}Title A" in payload["text"]
 
 
+def test_format_slack_payload_group_heading_notes_importance_order_when_scoring_enabled():
+    digest = _digest_with_one_article()
+    payload = format_slack_payload(digest, scoring_config=ScoringConfig(enabled=True))
+    assert "*feed（重要度順）*" in payload["text"]
+
+
+def test_format_slack_payload_group_heading_plain_when_scoring_disabled():
+    digest = _digest_with_one_article()
+    payload = format_slack_payload(digest, scoring_config=ScoringConfig(enabled=False))
+    assert "*feed*" in payload["text"]
+    assert "重要度順" not in payload["text"]
+
+
+def test_format_slack_payload_group_heading_plain_when_scoring_config_omitted():
+    digest = _digest_with_one_article()
+    payload = format_slack_payload(digest)
+    assert "*feed*" in payload["text"]
+    assert "重要度順" not in payload["text"]
+
+
+def test_format_google_chat_payload_group_heading_notes_importance_order_when_scoring_enabled():
+    digest = _digest_with_one_article()
+    payload = format_google_chat_payload(digest, scoring_config=ScoringConfig(enabled=True))
+    assert "*feed（重要度順）*" in payload["text"]
+
+
 def test_format_slack_payload_non_emphasized_article_has_no_marker():
     article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
     article.summary = "要約テキスト"

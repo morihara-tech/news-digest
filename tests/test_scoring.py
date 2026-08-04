@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.config import ScoringConfig, ScoringFeedbackConfig
 from src.core.feedback import FeedbackWeights
 from src.core.models import Article
 from src.core.scoring import apply_scoring, clamp
 
 
-def _article(url: str, title: str, feed_name: str, llm_score: float | None) -> Article:
+def _article(
+    url: str,
+    title: str,
+    feed_name: str,
+    llm_score: float | None,
+    published_parsed: datetime | None = None,
+) -> Article:
     return Article(
-        url=url, title=title, feed_name=feed_name, llm_importance_score=llm_score
+        url=url,
+        title=title,
+        feed_name=feed_name,
+        llm_importance_score=llm_score,
+        published_parsed=published_parsed,
     )
 
 
@@ -35,6 +47,41 @@ def test_apply_scoring_sorts_by_score_descending():
         "https://example.com/b",
         "https://example.com/c",
         "https://example.com/a",
+    ]
+
+
+def test_apply_scoring_ties_broken_by_published_date_descending():
+    """スコアが同点の場合、発行日が新しい記事が先に来る。"""
+    older = _article(
+        "https://example.com/old", "Old", "feed", 60.0,
+        published_parsed=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    newer = _article(
+        "https://example.com/new", "New", "feed", 60.0,
+        published_parsed=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    articles = [older, newer]
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert [a.url for a in articles] == [
+        "https://example.com/new",
+        "https://example.com/old",
+    ]
+
+
+def test_apply_scoring_ties_with_missing_published_date_go_last():
+    """スコアが同点で発行日不明(None)の記事は、同点内で日付のある記事より後ろに回る。"""
+    dated = _article(
+        "https://example.com/dated", "Dated", "feed", 60.0,
+        published_parsed=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    undated = _article("https://example.com/undated", "Undated", "feed", 60.0)
+    articles = [undated, dated]
+    apply_scoring(articles, _empty_weights(), ScoringConfig())
+
+    assert [a.url for a in articles] == [
+        "https://example.com/dated",
+        "https://example.com/undated",
     ]
 
 
