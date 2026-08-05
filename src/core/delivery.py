@@ -59,11 +59,29 @@ def _emphasized_title(article: Article, scoring_config: ScoringConfig | None) ->
     return article.title
 
 
+def _formatted_date(article: Article) -> str:
+    """published_parsed から `MM/DD` 形式のインラインコード日付表記を作る。
+
+    published_parsed が None の場合は空文字（呼び出し元でタイトルのみにする）。
+    """
+    if article.published_parsed is None:
+        return ""
+    return f" `{article.published_parsed.strftime('%m/%d')}`"
+
+
 def _format_article_line(article: Article, scoring_config: ScoringConfig | None = None) -> str:
+    """Slack/Google Chat共通の記事1件分の表示行を組み立てる。
+
+    タイトル行（リンク部分）はコードブロックで囲まない
+    （コードブロック内ではリンクが展開されずクリック不可になるため）。
+    要約がある記事のみ、要約文をコードブロックで囲んで別行に付与する。
+    """
     title = _emphasized_title(article, scoring_config)
+    date_suffix = _formatted_date(article)
+    line = f"• <{article.url}|{title}>{date_suffix}"
     if article.degraded or not article.summary:
-        return f"* <{article.url}|{title}>"
-    return f"* <{article.url}|{title}>\n  {article.summary}"
+        return line
+    return f"{line}\n```\n{article.summary}\n```"
 
 
 def format_slack_payload(
@@ -96,16 +114,12 @@ def format_google_chat_payload(
 
     lines: list[str] = []
     if site_label:
-        lines.append(f"📰 {site_label}")
+        lines.append(f"📰 *{site_label}*")
         lines.append("---")
     for group_name, articles in digest.groups.items():
         lines.append(f"*{group_name}*")
         for article in articles:
-            title = _emphasized_title(article, scoring_config)
-            if article.degraded or not article.summary:
-                lines.append(f"- {title}\n  {article.url}")
-            else:
-                lines.append(f"- {title}\n  {article.summary}\n  {article.url}")
+            lines.append(_format_article_line(article, scoring_config))
     text = "\n".join(lines)
     return {"text": text}
 

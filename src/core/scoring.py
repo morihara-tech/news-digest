@@ -11,9 +11,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.config import ScoringConfig
 from src.core.feedback import FeedbackWeights
 from src.core.models import Article
+
+# published_parsed が None の記事をタイブレークで最後尾に回すための番兵（tz-aware）。
+_UNDATED = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def clamp(value: float, lo: float, hi: float) -> float:
@@ -53,4 +58,9 @@ def apply_scoring(
         article.importance_score = score
         article.emphasized = (not muted) and score >= scoring_config.emphasis_threshold
 
-    articles.sort(key=lambda a: a.importance_score, reverse=True)
+    # 同スコアの場合は発行日が新しい記事を先にする（タイブレーク）。
+    # published_parsed が None の記事は同スコア内で最後尾に回す。
+    articles.sort(
+        key=lambda a: (a.importance_score, a.published_parsed or _UNDATED),
+        reverse=True,
+    )

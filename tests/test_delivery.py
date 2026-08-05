@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import httpx
 import pytest
 
@@ -140,6 +142,74 @@ def test_format_google_chat_payload_degraded_article_kept_with_title_and_link():
     assert "Title A" in payload["text"]
     assert "https://example.com/a" in payload["text"]
     assert scoring_config.emphasis_marker not in payload["text"]
+
+
+def test_format_slack_payload_uses_bullet_dot_not_asterisk():
+    digest = _digest_with_one_article(degraded=False)
+    payload = format_slack_payload(digest)
+    assert "• <https://example.com/a|Title A>" in payload["text"]
+    assert "* <https://example.com/a|Title A>" not in payload["text"]
+
+
+def test_format_slack_payload_appends_inline_code_date():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.published_parsed = datetime(2026, 8, 5, tzinfo=timezone.utc)
+    digest = _digest_with_articles([article])
+
+    payload = format_slack_payload(digest)
+    assert "`08/05`" in payload["text"]
+
+
+def test_format_slack_payload_omits_date_when_published_parsed_missing():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.published_parsed = None
+    digest = _digest_with_articles([article])
+
+    payload = format_slack_payload(digest)
+    # 日付のインラインコード（`MM/DD`形式）が付与されないことのみ確認する
+    assert "`08" not in payload["text"]
+    assert "`0" not in payload["text"]
+
+
+def test_format_slack_payload_summary_wrapped_in_code_block_title_line_not():
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.published_parsed = datetime(2026, 8, 5, tzinfo=timezone.utc)
+    digest = _digest_with_articles([article])
+
+    payload = format_slack_payload(digest)
+    text = payload["text"]
+    lines = text.split("\n")
+    title_line = next(line for line in lines if "<https://example.com/a|Title A>" in line)
+    # タイトル行自体はコードブロック記号を含まない
+    assert "```" not in title_line
+    # 要約はコードブロックで囲まれている
+    assert "```\n要約テキスト\n```" in text
+
+
+def test_format_slack_payload_degraded_article_has_no_empty_code_block():
+    digest = _digest_with_one_article(degraded=True)
+    payload = format_slack_payload(digest)
+    assert "```" not in payload["text"]
+
+
+def test_format_google_chat_payload_matches_slack_style_format():
+    """Google Chatも共通フォーマット（箇条書き記号・日付インラインコード・要約コードブロック）を使う。"""
+    article = Article(url="https://example.com/a", title="Title A", feed_name="feed")
+    article.summary = "要約テキスト"
+    article.published_parsed = datetime(2026, 8, 5, tzinfo=timezone.utc)
+    digest = _digest_with_articles([article])
+
+    payload = format_google_chat_payload(digest)
+    text = payload["text"]
+    assert "• <https://example.com/a|Title A> `08/05`" in text
+    assert "```\n要約テキスト\n```" in text
+
+    lines = text.split("\n")
+    title_line = next(line for line in lines if "<https://example.com/a|Title A>" in line)
+    assert "```" not in title_line
 
 
 def test_resolve_delivery_targets_reads_env(monkeypatch):

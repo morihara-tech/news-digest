@@ -40,7 +40,7 @@ schedule:
 # ダイジェスト整形
 digest:
   max_articles: 20
-  group_by: feed              # feed | category | none
+  group_by: feed              # feed | category | none | importance
 
 # 保持ポリシー（既読状態の賞味期限）
 retention:

@@ -12,10 +12,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from src.config import DigestConfig
 from src.core.models import Article
 from src.llm.base import LLMProvider
+
+# published_parsed が None の記事をグルーピング内ソートで最後尾に回すための番兵（tz-aware）。
+_UNDATED = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def mark_cost_overflow(pool: list[Article], limit: int) -> list[Article]:
@@ -77,15 +81,42 @@ def build_digest(articles: list[Article], digest_config: DigestConfig) -> Digest
     limited = articles[: digest_config.max_articles]
     carried_over_count = max(0, len(articles) - digest_config.max_articles)
 
-    if digest_config.group_by == "feed":
-        key_fn = lambda a: a.feed_name  # noqa: E731
-    elif digest_config.group_by == "category":
-        key_fn = lambda a: a.category  # noqa: E731
+    if digest_config.group_by == "importance":
+        groups = _build_importance_groups(limited)
     else:
-        key_fn = lambda a: "articles"  # noqa: E731
+        if digest_config.group_by == "feed":
+            key_fn = lambda a: a.feed_name  # noqa: E731
+        elif digest_config.group_by == "category":
+            key_fn = lambda a: a.category  # noqa: E731
+        else:
+            key_fn = lambda a: "articles"  # noqa: E731
 
-    groups: dict[str, list[Article]] = {}
-    for article in limited:
-        groups.setdefault(key_fn(article), []).append(article)
+        groups = {}
+        for article in limited:
+            groups.setdefault(key_fn(article), []).append(article)
 
     return DigestResult(articles=limited, groups=groups, carried_over_count=carried_over_count)
+
+
+def _build_importance_groups(limited: list[Article]) -> dict[str, list[Article]]:
+    """重要度に応じて「⭐ 注目記事」と「その他の記事（新しい順）」の2ティアに分ける。
+
+    - 注目記事: article.emphasized == True の記事のみ。順序は入力順（=スコア降順）を維持する。
+    - その他: 残り全部。published_parsed 降順（新しい順）でソートする。
+      published_parsed が None の記事は同グループ内で最古（末尾）扱いにする。
+    - 注目記事が0件の場合は2ティアに分けず、group_by="none" と同じ単一グループにフォールバックする。
+    """
+    emphasized = [a for a in limited if a.emphasized]
+    others = [a for a in limited if not a.emphasized]
+
+    if not emphasized:
+        return {"articles": limited}
+
+    others_sorted = sorted(
+        others, key=lambda a: a.published_parsed or _UNDATED, reverse=True
+    )
+
+    groups: dict[str, list[Article]] = {"⭐ 注目記事": emphasized}
+    if others_sorted:
+        groups["その他の記事（新しい順）"] = others_sorted
+    return groups
