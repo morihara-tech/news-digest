@@ -87,6 +87,11 @@ feeds:
                                   # このフィードで max_age_days を書かない場合、
                                   # グローバルの max_age_days は無効化される点に注意
                                   # （effective_filters()はフィールド単位のマージではなく全置換のため）。
+    # delivery:                # フィード単位で指定するとグローバルのdeliveryを丸ごと上書きする（完全上書き、部分マージではない）。
+    #   - name: publickey-slack
+    #     format: slack
+    #     webhook_url_env: PUBLICKEY_SLACK_WEBHOOK_URL
+    #     enabled: true
   - name: "Example Blog（scraper方式のサンプル）"
     url: "https://example.com/blog"
     category: tech

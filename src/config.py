@@ -111,6 +111,7 @@ class FeedConfig(BaseModel):
     category: str = "general"
     enabled: bool = True
     filters: FiltersConfig | None = None
+    delivery: list[DeliveryTargetConfig] | None = None
     # rss: feedparserによるRSS/Atom取得（既定）。scraper: RSS/Atomがないサイト向けに
     # scrapers/{scraper_id}/scraper.py のfetch()を呼び出す方式。
     source_type: Literal["rss", "scraper"] = "rss"
@@ -130,6 +131,15 @@ class FeedConfig(BaseModel):
         if self.filters is not None:
             return self.filters
         return global_filters
+
+    def effective_delivery_targets(
+        self, global_delivery: list[DeliveryTargetConfig]
+    ) -> list[DeliveryTargetConfig]:
+        """フィード単位のdeliveryが指定されていればそれを優先（完全上書き）し、
+        なければグローバルdeliveryを適用する。"""
+        if self.delivery is not None:
+            return self.delivery
+        return global_delivery
 
 
 class AppConfig(BaseModel):
