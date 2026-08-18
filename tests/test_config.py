@@ -40,6 +40,48 @@ def test_feed_effective_filters_overrides_global():
     assert feed_b.effective_filters(config.filters).exclude_keywords == ["ad"]
 
 
+def test_feed_effective_delivery_targets_uses_global_when_unspecified():
+    raw = yaml.safe_load(
+        """
+        feeds:
+          - name: a
+            url: https://example.com/a
+        delivery:
+          - name: global-slack
+            format: slack
+            webhook_url_env: SLACK_WEBHOOK_URL
+        """
+    )
+    config = AppConfig.model_validate(raw)
+    feed_a = config.feeds[0]
+    result = feed_a.effective_delivery_targets(config.delivery)
+    assert result == config.delivery
+    assert [t.name for t in result] == ["global-slack"]
+
+
+def test_feed_effective_delivery_targets_overrides_global():
+    raw = yaml.safe_load(
+        """
+        feeds:
+          - name: a
+            url: https://example.com/a
+            delivery:
+              - name: feed-a-slack
+                format: slack
+                webhook_url_env: FEED_A_SLACK_WEBHOOK_URL
+        delivery:
+          - name: global-slack
+            format: slack
+            webhook_url_env: SLACK_WEBHOOK_URL
+        """
+    )
+    config = AppConfig.model_validate(raw)
+    feed_a = config.feeds[0]
+    result = feed_a.effective_delivery_targets(config.delivery)
+    assert [t.name for t in result] == ["feed-a-slack"]
+    assert result != config.delivery
+
+
 def test_duplicate_feed_names_rejected():
     raw = {
         "feeds": [

@@ -260,6 +260,137 @@ def test_run_digest_site_failure_isolation(tmp_path, fixtures_dir, monkeypatch):
         assert all(r["delivered_at"] is None for r in publickey_rows)
 
 
+def test_run_digest_two_feeds_without_override_use_global_delivery(
+    tmp_path, fixtures_dir, monkeypatch
+):
+    """フィード単位のdelivery指定がない場合、既存動作どおり両方ともグローバル配信先に届くこと。"""
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")
+
+    sent_urls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, json, timeout):
+        sent_urls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    config = _config_with_two_feeds(fixtures_dir, "atom_publickey.xml", "Publickey")
+    with StateStore(tmp_path / "digest.db") as store:
+        provider = MockLLMProvider()
+        result = run_digest(config, store, provider)
+
+        assert result.status == "delivered"
+        site_statuses = {r.feed_name: r.status for r in result.site_results}
+        assert site_statuses["Tech"] == "delivered"
+        assert site_statuses["Publickey"] == "delivered"
+
+        # Tech, Publickeyそれぞれ1回ずつ、いずれもグローバルのwebhook URLに送信される
+        assert len(sent_urls) == 2
+        assert all(url == "https://hooks.example.com/slack" for url in sent_urls)
+
+
+def test_run_digest_feed_delivery_override_sends_to_feed_specific_target(
+    tmp_path, fixtures_dir, monkeypatch
+):
+    """フィード単位のdeliveryを指定すると、そのフィードだけ別のwebhook URLに配信されること。"""
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")
+    monkeypatch.setenv(
+        "PUBLICKEY_SLACK_WEBHOOK_URL", "https://hooks.example.com/publickey-slack"
+    )
+
+    sent_by_url: dict[str, int] = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, json, timeout):
+        sent_by_url[url] = sent_by_url.get(url, 0) + 1
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    config = _config_with_two_feeds(fixtures_dir, "atom_publickey.xml", "Publickey")
+    publickey_feed = next(f for f in config.feeds if f.name == "Publickey")
+    publickey_feed.delivery = [
+        DeliveryTargetConfig(
+            name="publickey-slack",
+            format="slack",
+            webhook_url_env="PUBLICKEY_SLACK_WEBHOOK_URL",
+            enabled=True,
+        )
+    ]
+
+    with StateStore(tmp_path / "digest.db") as store:
+        provider = MockLLMProvider()
+        result = run_digest(config, store, provider)
+
+        assert result.status == "delivered"
+        site_statuses = {r.feed_name: r.status for r in result.site_results}
+        assert site_statuses["Tech"] == "delivered"
+        assert site_statuses["Publickey"] == "delivered"
+
+        # Publickey専用のwebhook URLに1回だけ届き、グローバルのURLには届かない(Publickey分は)
+        assert sent_by_url.get("https://hooks.example.com/publickey-slack") == 1
+        # Techはグローバルのwebhook URLに届く
+        assert sent_by_url.get("https://hooks.example.com/slack") == 1
+
+
+def test_run_digest_feed_delivery_override_missing_env_fails_only_that_site(
+    tmp_path, fixtures_dir, monkeypatch
+):
+    """フィード単位で上書きした環境変数が未設定の場合、そのサイトのみfailedとなり、
+    他サイト(グローバル配信先が正常)は影響を受けないこと。"""
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")
+    monkeypatch.delenv("PUBLICKEY_SLACK_WEBHOOK_URL", raising=False)
+
+    sent_urls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, json, timeout):
+        sent_urls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    config = _config_with_two_feeds(fixtures_dir, "atom_publickey.xml", "Publickey")
+    publickey_feed = next(f for f in config.feeds if f.name == "Publickey")
+    publickey_feed.delivery = [
+        DeliveryTargetConfig(
+            name="publickey-slack",
+            format="slack",
+            webhook_url_env="PUBLICKEY_SLACK_WEBHOOK_URL",
+            enabled=True,
+        )
+    ]
+
+    with StateStore(tmp_path / "digest.db") as store:
+        provider = MockLLMProvider()
+        result = run_digest(config, store, provider)
+
+        # Techが成功しているため全体はdelivered
+        assert result.status == "delivered"
+        site_statuses = {r.feed_name: r.status for r in result.site_results}
+        assert site_statuses["Tech"] == "delivered"
+        assert site_statuses["Publickey"] == "failed"
+
+        # Publickey向けには何も送信されていない(グローバルのURLにも漏れない)
+        assert sent_urls == ["https://hooks.example.com/slack"]
+
+        rows = {row["url"]: row for row in store.get_seen_articles()}
+        publickey_rows = [r for r in rows.values() if r["feed_name"] == "Publickey"]
+        assert len(publickey_rows) == 2
+        # Publickeyの記事はpendingのまま残っている(次回持ち越し)
+        assert all(r["delivered_at"] is None for r in publickey_rows)
+
+
 def test_run_digest_global_dedup_across_feeds(tmp_path, fixtures_dir, monkeypatch):
     """重複統合(URL基準)はサイト分割より前にグローバルで1回だけ行われること。"""
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.com/slack")

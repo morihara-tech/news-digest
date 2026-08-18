@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 
 from src.config import AppConfig
-from src.core.delivery import DeliveryError, deliver_digest, resolve_delivery_targets
+from src.core.delivery import DeliveryError, DeliveryTarget, deliver_digest, resolve_delivery_targets
 from src.core.digest import build_digest, mark_cost_overflow, summarize_articles
 from src.core.feed_fetcher import fetch_all
 from src.core.dedup import filter_new_articles
@@ -75,14 +75,16 @@ def run_digest(
       3. 新着記事をpending登録（冪等）
       4. 配信件数上限を適用（サイト分割より前）
       5. コスト上限による縮退配信マーキング（サイト横断で1回）
-      6. 配信先解決
 
     Phase 2（サイトごと、各サイト独立）:
-      1. サイトごとにLLM要約
-      2. サイトごとに件数上限・グルーピングを適用したダイジェストを組み立て
-      3. サイトごとに独立したメッセージとしてWebhook配信
-      4. 配信成功後にのみそのサイトの記事の delivered_at を確定
-      5. 1サイトの失敗（要約・配信とも）は他サイトの処理をブロックしない
+      1. サイトごとに配信先を解決（フィード単位のdeliveryが指定されていれば
+         グローバルdeliveryを完全上書きする。全サイトの解決結果が0件なら
+         要約前にno_delivery_targetで早期リターンする）
+      2. サイトごとにLLM要約
+      3. サイトごとに件数上限・グルーピングを適用したダイジェストを組み立て
+      4. サイトごとに独立したメッセージとしてWebhook配信
+      5. 配信成功後にのみそのサイトの記事の delivered_at を確定
+      6. 1サイトの失敗（配信先解決・要約・配信とも）は他サイトの処理をブロックしない
 
     最後に delivery_runs に実行結果を記録する。
     """
@@ -113,8 +115,24 @@ def run_digest(
         global_digest = build_digest(new_articles, config.digest)
         mark_cost_overflow(global_digest.articles, config.llm.max_articles_to_summarize)
 
-        targets = resolve_delivery_targets(config.enabled_delivery_targets())
-        if not targets:
+        site_groups = _group_by_feed_name(global_digest.articles)
+        feed_by_name = {f.name: f for f in config.feeds}
+
+        resolved_by_feed: dict[str, list[DeliveryTarget]] = {}
+        for feed_name in site_groups:
+            feed = feed_by_name.get(feed_name)
+            if feed is None:
+                # 理論上到達しないはずだが、縮退方針に合わせグローバルにフォールバックする
+                logger.warning(
+                    "フィード %s の設定が見つからずグローバル配信先にフォールバックします",
+                    feed_name,
+                )
+                target_configs = config.enabled_delivery_targets()
+            else:
+                target_configs = feed.effective_delivery_targets(config.delivery)
+            resolved_by_feed[feed_name] = resolve_delivery_targets(target_configs)
+
+        if not any(resolved_by_feed.values()):
             error_message = "有効な配信先が解決できませんでした（環境変数未設定等）"
             logger.warning(
                 "配信先が解決できず配信をスキップしました: article_count=%s",
@@ -130,7 +148,6 @@ def run_digest(
                 carried_over_count=global_digest.carried_over_count,
             )
 
-        site_groups = _group_by_feed_name(global_digest.articles)
         site_results: list[SiteRunResult] = []
 
         feedback_weights = (
@@ -138,6 +155,23 @@ def run_digest(
         )
 
         for feed_name, site_articles in site_groups.items():
+            targets = resolved_by_feed[feed_name]
+            if not targets:
+                logger.warning(
+                    "サイト %s の配信先が解決できず配信をスキップしました: article_count=%s",
+                    feed_name,
+                    len(site_articles),
+                )
+                site_results.append(
+                    SiteRunResult(
+                        feed_name=feed_name,
+                        status="failed",
+                        article_count=len(site_articles),
+                        error="有効な配信先が解決できませんでした（環境変数未設定等）",
+                    )
+                )
+                continue
+
             try:
                 summarize_articles(site_articles, llm_provider)
                 if config.scoring.enabled:

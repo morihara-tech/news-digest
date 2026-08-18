@@ -88,7 +88,13 @@ news-digestの「scraper方式」（RSS/Atomフィードを提供していない
 7. 下記「契約チェックリスト」で自己検証する。
 8. `config.yaml`（`config.example.yaml` ではなく実運用ファイル）の `feeds` に
    `source_type: scraper` + `scraper_id: {id}` のエントリを実際に追記する。
-   カテゴリ等の値はユーザーに確認して埋める。
+   カテゴリ等の値はユーザーに確認して埋める。このとき併せて「このフィードだけ
+   個別の配信先（Slack/Google Chat）に配信したいですか？（任意・スキップ可。
+   何も指定しなければ従来通りグローバルの `delivery:` 設定が使われます）」と
+   尋ねてください。希望があれば、そのフィードのエントリに `delivery:`
+   （`name` / `format`: `slack` または `google_chat` / `webhook_url_env` /
+   `enabled`、既定true）を追記してください。希望がなければ何も追記せず、
+   グローバルの `delivery:` 設定がそのまま適用されます。
 9. テスト送信を行う（下記「テスト送信」を参照）。
 10. `scrapers/{id}/` は `.gitignore` 対象のローカルファイルであり、コミットや
     PR作成は行わない旨をユーザーに案内する。
