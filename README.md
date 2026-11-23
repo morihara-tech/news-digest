@@ -189,6 +189,35 @@ cron等の監視に組み込むこともできます。
   なります（成功した他サイトの記事は通常どおり `delivered_at` が確定します）。
 - `retention.seen_ttl_days`（既定90日）以内に配信済みの同一URLは重複配信しません。
 
+### ログへの秘密情報出力の防止
+
+Webhook URL（Google Chat は URL のクエリ文字列に含まれる `key` / `token`、Slack は URL のパス部分）は
+秘密情報です。`httpx` のリクエストログや例外メッセージにURLが含まれても、ログに出力されないよう
+CLI（`news-digest`）とMCPサーバーの両方で共通のロギング設定（`src/logging_config.py`）を適用しています。
+
+- ログハンドラに、秘密情報をマスクするFilterを付与しています。メッセージ・例外のtraceback・スタック情報が対象で、
+  `https://chat.googleapis.com/***` のように配信先ホスト名までは残します。
+- `httpx` / `httpcore` ロガーはWARNING以上のみ出力します。
+- 配信失敗時のエラーメッセージ（`RunResult.error` およびSQLite DBの実行履歴に保存される文字列を含む）には、
+  Webhook URLを含めず、例外の型名とHTTPステータスコードのみを記載します。
+- ログは標準エラー出力に出ます（MCPサーバーはstdioで通信するため標準出力には出しません）。
+
+**注意: この対応より前のバージョンで出力されたログには、Webhook URLの `key` / `token` が平文で残っている可能性があります。**
+対象になりうるのは、標準出力のリダイレクト先ファイル、cronのログ、`logs/` 配下のファイル、
+およびIssue・PR・チャットなどに貼り付け済みのログです。該当するログがある場合は次の対応を行ってください。
+
+1. 該当ログファイルを削除する（共有・公開済みのものは共有先でも削除する）。
+2. Webhook URLを再発行（ローテーション）し、旧URLを無効化する。
+   - Google Chat: 対象スペースの設定（「アプリと統合」等のWebhook管理画面）で既存のWebhookを削除し、
+     Webhookを新規作成して新しいURLを発行する（画面の名称はGoogle Chatのバージョンにより異なる場合があります）。
+   - Slack: Slack Appの管理画面でIncoming Webhookの既存のURLを削除し、同じチャンネル向けに新しいWebhook URLを追加する。
+3. 新しいURLを `.env` の該当する環境変数（`GOOGLE_CHAT_WEBHOOK_URL` / `SLACK_WEBHOOK_URL`、
+   または `config.yaml` の `webhook_url_env` で指定した変数）に設定する。
+
+ログをIssue・PR・チャット等で共有する前に、`key=`、`token=`、`chat.googleapis.com`、`hooks.slack.com/services`
+の文字列が含まれていないかを確認してください。この対応後のバージョンのログでも、
+自作のスクリプトや外部ライブラリが出力するログまでは保証できません。
+
 ## OSスケジューラへの自動登録（`news-digest schedule`）
 
 配信バッチを定期実行するには、`news-digest schedule` サブコマンドで
