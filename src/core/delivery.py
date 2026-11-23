@@ -10,6 +10,7 @@ import httpx
 from src.config import DeliveryTargetConfig, ScoringConfig, get_env
 from src.core.digest import DigestResult
 from src.core.models import Article
+from src.logging_config import mask_secrets, register_secret
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ def resolve_delivery_targets(configs: list[DeliveryTargetConfig]) -> list[Delive
                 config.webhook_url_env,
             )
             continue
+        register_secret(url)
         targets.append(DeliveryTarget(config=config, webhook_url=url))
     return targets
 
@@ -139,12 +141,25 @@ def build_payload(
     raise ValueError(f"未知の配信フォーマットです: {target.config.format}")
 
 
+def _describe_http_error(exc: httpx.HTTPError, target: DeliveryTarget) -> str:
+    """URLを含まない例外の説明文を返す。"""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"{type(exc).__name__} (HTTP {exc.response.status_code})"
+    # TransportError等はメッセージにURLが含まれない場合もあるが、念のためマスクを通す
+    detail = mask_secrets(str(exc).replace(target.webhook_url, "***"))
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
 def send_webhook(target: DeliveryTarget, payload: dict, timeout: float = 15.0) -> None:
     try:
         response = httpx.post(target.webhook_url, json=payload, timeout=timeout)
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise DeliveryError(f"配信先 {target.config.name} への配信に失敗しました: {exc}") from exc
+        # httpxの例外メッセージはWebhook URL全体（key/token含む）を含むため、
+        # 例外型とステータスコードのみを記載する。元例外はURLを保持するためチェーンしない。
+        raise DeliveryError(
+            f"配信先 {target.config.name} への配信に失敗しました: {_describe_http_error(exc, target)}"
+        ) from None
 
 
 def deliver_digest(

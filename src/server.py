@@ -11,12 +11,15 @@ from mcp.server.fastmcp import FastMCP
 
 from src.config import load_config
 from src.core.state import StateStore
+from src.logging_config import setup_logging
 from src.tools.config_tools import get_config_summary, list_feeds
 from src.tools.feedback_tools import record_feedback
 from src.tools.history_tools import get_delivery_history, get_seen_articles
 from src.tools.run_tools import trigger_manual_run
 
 load_dotenv()
+# stdioトランスポートのためログはstderrのみ。FastMCPより先に初期化する
+setup_logging()
 
 mcp = FastMCP("news-digest")
 

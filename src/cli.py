@@ -18,6 +18,7 @@ from src.config import AppConfig, load_config
 from src.core.runner import run_digest
 from src.core.state import StateStore
 from src.llm.factory import create_llm_provider
+from src.logging_config import setup_logging
 from src.scheduler.base import (
     WRAPPER_SCRIPT_RELATIVE_PATH,
     SchedulerBackend,
@@ -40,9 +41,7 @@ from src.scheduler.windows import WindowsBackend
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
